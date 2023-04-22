@@ -1,5 +1,6 @@
 import copy
 
+import inflect
 from pyinaturalist.constants import JsonResponse
 from pyinaturalist.models import Taxon
 
@@ -9,6 +10,9 @@ from dronefly.core.formatters.generic import (
 )
 from dronefly.core.query.query import QueryResponse
 from dronefly.core.utils import obs_url_from_v1
+
+p = inflect.engine()
+
 
 class TaxonFormatter(CoreTaxonFormatter):
     def format(
