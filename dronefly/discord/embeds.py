@@ -1,6 +1,7 @@
 from functools import wraps
 
 import discord
+import inflect
 from pyinaturalist.models import IconPhoto, Taxon
 
 from dronefly.core.formatters.constants import WWW_BASE_URL
@@ -21,6 +22,8 @@ MAX_EMBED_LEN = 6000
 # It's not exactly 2**23 due to overhead, but how much less, we can't determine.
 # This is a safe value that works for others.
 MAX_EMBED_FILE_LEN = 8000000
+
+p = inflect.engine()
 
 
 def make_decorator(function):
@@ -94,5 +97,6 @@ def make_image_embed(taxon: Taxon, index, lang: str):
         if index == 1:
             embed.description = "This taxon has no default photo."
         else:
-            embed.description = f"Photo number {index} not found.\nTaxon has {len(taxon.taxon_photos)} photos."
+            count = len(taxon.taxon_photos)
+            embed.description = f"Photo number {index} not found.\nTaxon has {count} {p.plural('photo', count)}."
     return embed
