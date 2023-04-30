@@ -1,84 +1,65 @@
-import copy
+from functools import wraps
 
-import inflect
-from pyinaturalist.constants import JsonResponse
+import discord
 from pyinaturalist.models import Taxon
 
-from dronefly.core.formatters.generic import (
-    format_taxon_names,
-    TaxonFormatter as CoreTaxonFormatter,
-)
-from dronefly.core.query.query import QueryResponse
-from dronefly.core.utils import obs_url_from_v1
+from dronefly.core.formatters.constants import WWW_BASE_URL
+from dronefly.core.formatters.generic import TaxonFormatter
 
-p = inflect.engine()
-
-
-class TaxonFormatter(CoreTaxonFormatter):
-    def format(
-        self,
-        with_ancestors: bool = True
-    ):
-        """Format the taxon as markdown.
-
-        with_ancestors: bool, optional
-            When False, omit ancestors
-        """
-        description = self.format_taxon_description()
-        if with_ancestors and self.taxon.ancestors:
-            description += (
-                " in: "
-                + format_taxon_names(
-                    self.taxon.ancestors,
-                    hierarchy=True,
-                    max_len=self.max_len,
-                )
-            )
-        else:
-            description += "."
-        return description
+EMBED_COLOR = 0x90EE90
+# From https://discordapp.com/developers/docs/resources/channel#embed-limits
+MAX_EMBED_TITLE_LEN = MAX_EMBED_NAME_LEN = 256
+MAX_EMBED_DESCRIPTION_LEN = 2048
+MAX_EMBED_FIELDS = 25
+MAX_EMBED_VALUE_LEN = 1024
+MAX_EMBED_FOOTER_LEN = 2048
+MAX_EMBED_AUTHOR_LEN = 256
+MAX_EMBED_LEN = 6000
+# It's not exactly 2**23 due to overhead, but how much less, we can't determine.
+# This is a safe value that works for others.
+MAX_EMBED_FILE_LEN = 8000000
 
 
-class QueryResponseFormatter(TaxonFormatter):
-    def __init__(
-            self,
-            query_response: QueryResponse,
-            observations: JsonResponse=None,
-            **kwargs,
-        ):
-        super().__init__(**kwargs)
-        self.query_response = query_response
-        self.observations = observations
-        self.obs_count_formatter = self.ObsCountFormatter(query_response.taxon, query_response, observations)
+def make_decorator(function):
+    """Make a decorator that has arguments."""
 
-    class ObsCountFormatter(TaxonFormatter.ObsCountFormatter):
-        def __init__(self, taxon: Taxon, query_response: QueryResponse=None, observations: JsonResponse=None):
-            super().__init__(taxon)
-            self.query_response = query_response
-            self.observations = observations
+    @wraps(function)
+    def wrap_make_decorator(*args, **kwargs):
+        if len(args) == 1 and (not kwargs) and callable(args[0]):
+            # i.e. called as @make_decorator
+            return function(args[0])
+        # i.e. called as @make_decorator(*args, **kwargs)
+        return lambda wrapped_function: function(wrapped_function, *args, **kwargs)
 
-        def count(self):
-            if self.observations:
-                count = self.observations.get('total_results')
-            else:
-                count = self.taxon.observations_count
-            return count
+    return wrap_make_decorator
 
-        def url(self):
-            return obs_url_from_v1(self.query_response.obs_args())
 
-        def description(self):
-            count = self.link()
-            count_str = "uncounted" if count is None else str(count)
-            adjectives = self.query_response.adjectives # rg, nid, etc.
-            query_without_taxon = copy.copy(self.query_response)
-            query_without_taxon.taxon = None
-            description = [
-                count_str,
-                *adjectives,
-                p.plural('observation', count),
-            ]
-            filter = query_without_taxon.obs_query_description(with_adjectives=False) # place, prj, etc.
-            if filter:
-                description.append(filter)
-            return " ".join(description)
+@make_decorator
+def format_items_for_embed(function, max_len=MAX_EMBED_NAME_LEN):
+    """Format items as delimited list not exceeding Discord length limits."""
+
+    @wraps(function)
+    def wrap_format_items_for_embed(*args, **kwargs):
+        kwargs["max_len"] = max_len
+        return function(*args, **kwargs)
+
+    return wrap_format_items_for_embed
+
+
+def make_embed(**kwargs):
+    """Make a standard embed."""
+    return discord.Embed(color=EMBED_COLOR, **kwargs)
+
+def make_taxa_embed(taxon: Taxon, formatter: TaxonFormatter, description: str):
+    """Make a taxon embed."""
+    embed = make_embed(
+        url=f"{WWW_BASE_URL}/taxa/{taxon.id}",
+        title=formatter.format_title(),
+        description=description,
+    )
+    embed.set_thumbnail(
+        url=taxon.default_photo.square_url
+        if taxon.default_photo
+        else taxon.icon.url
+    )
+    return embed
