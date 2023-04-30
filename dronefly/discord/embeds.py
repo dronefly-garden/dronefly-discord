@@ -1,10 +1,13 @@
 from functools import wraps
 
 import discord
-from pyinaturalist.models import Taxon
+from pyinaturalist.models import IconPhoto, Taxon
 
 from dronefly.core.formatters.constants import WWW_BASE_URL
-from dronefly.core.formatters.generic import TaxonFormatter
+from dronefly.core.formatters.generic import (
+    format_taxon_names,
+    TaxonFormatter,
+)
 
 EMBED_COLOR = 0x90EE90
 # From https://discordapp.com/developers/docs/resources/channel#embed-limits
@@ -46,6 +49,12 @@ def format_items_for_embed(function, max_len=MAX_EMBED_NAME_LEN):
     return wrap_format_items_for_embed
 
 
+@format_items_for_embed
+def format_taxon_names_for_embed(*args, **kwargs):
+    """Format taxon names for output in embed."""
+    return format_taxon_names(*args, **kwargs)
+
+
 def make_embed(**kwargs):
     """Make a standard embed."""
     return discord.Embed(color=EMBED_COLOR, **kwargs)
@@ -62,4 +71,28 @@ def make_taxa_embed(taxon: Taxon, formatter: TaxonFormatter, description: str):
         if taxon.default_photo
         else taxon.icon.url
     )
+    return embed
+
+def make_image_embed(taxon: Taxon, index, lang: str):
+    formatter = TaxonFormatter(taxon, lang=lang, with_url=False)
+    title = formatter.format_title()
+
+    taxon_photo = None
+    if index == 1 and taxon.default_photo and not isinstance(taxon.default_photo, IconPhoto):
+        taxon_photo = taxon.default_photo
+    elif index >= 1 and index <= len(taxon.taxon_photos):
+        taxon_photo = taxon.taxon_photos[index - 1]
+
+    embed = make_embed(url=f"{WWW_BASE_URL}/taxa/{taxon.id}")
+    embed.title = title
+
+    if taxon_photo:
+        embed.set_image(url=taxon_photo.original_url)
+        embed.set_footer(text=taxon_photo.attribution)
+        embed.description = f"Photo {index} of {len(taxon.taxon_photos)}"
+    else:
+        if index == 1:
+            embed.description = "This taxon has no default photo."
+        else:
+            embed.description = f"Photo number {index} not found.\nTaxon has {len(taxon.taxon_photos)} photos."
     return embed
