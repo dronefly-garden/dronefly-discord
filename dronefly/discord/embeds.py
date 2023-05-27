@@ -4,11 +4,15 @@ import discord
 import inflect
 from pyinaturalist.models import IconPhoto, Taxon
 
+from dronefly.core import formatters
 from dronefly.core.formatters.constants import WWW_BASE_URL
 from dronefly.core.formatters.generic import (
     format_taxon_names,
     TaxonFormatter,
 )
+
+# This shows up better in Discord than \u{SPARKLE}:
+formatters.generic.MEANS_LABEL_EMOJI["endemic"] = ":sparkle:"
 
 EMBED_COLOR = 0x90EE90
 # From https://discordapp.com/developers/docs/resources/channel#embed-limits
