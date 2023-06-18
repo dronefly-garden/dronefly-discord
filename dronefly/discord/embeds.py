@@ -66,6 +66,7 @@ def make_embed(**kwargs):
     """Make a standard embed."""
     return discord.Embed(color=EMBED_COLOR, **kwargs)
 
+
 def make_taxa_embed(taxon: Taxon, formatter: TaxonFormatter, description: str):
     """Make a taxon embed."""
     embed = make_embed(
@@ -74,18 +75,21 @@ def make_taxa_embed(taxon: Taxon, formatter: TaxonFormatter, description: str):
         description=description,
     )
     embed.set_thumbnail(
-        url=taxon.default_photo.square_url
-        if taxon.default_photo
-        else taxon.icon.url
+        url=taxon.default_photo.square_url if taxon.default_photo else taxon.icon.url
     )
     return embed
+
 
 def make_image_embed(taxon: Taxon, index, lang: str):
     formatter = TaxonFormatter(taxon, lang=lang, with_url=False)
     title = formatter.format_title()
 
     taxon_photo = None
-    if index == 1 and taxon.default_photo and not isinstance(taxon.default_photo, IconPhoto):
+    if (
+        index == 1
+        and taxon.default_photo
+        and not isinstance(taxon.default_photo, IconPhoto)
+    ):
         taxon_photo = taxon.default_photo
     elif index >= 1 and index <= len(taxon.taxon_photos):
         taxon_photo = taxon.taxon_photos[index - 1]
