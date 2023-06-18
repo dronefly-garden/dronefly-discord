@@ -106,5 +106,8 @@ def make_image_embed(taxon: Taxon, index, lang: str):
             embed.description = "This taxon has no default photo."
         else:
             count = len(taxon.taxon_photos)
-            embed.description = f"Photo number {index} not found.\nTaxon has {count} {p.plural('photo', count)}."
+            embed.description = (
+                f"Photo number {index} not found.\n"
+                f"Taxon has {count} {p.plural('photo', count)}."
+            )
     return embed
