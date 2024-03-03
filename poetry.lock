@@ -580,13 +580,13 @@ voice = ["PyNaCl (>=1.3.0,<1.6)"]
 
 [[package]]
 name = "dronefly-core"
-version = "0.3.6"
+version = "0.3.7"
 description = "Core dronefly components"
 optional = false
-python-versions = ">=3.8.1,<3.12"
+python-versions = ">=3.8.1,<3.13"
 files = [
-    {file = "dronefly_core-0.3.6-py3-none-any.whl", hash = "sha256:db348ea7088f62913f09a9ab29758bb509678423534f346d52b2fbcde5eac883"},
-    {file = "dronefly_core-0.3.6.tar.gz", hash = "sha256:f53e51b706b98c4b075de21c1dc2ba387f79126024e8cc64b3ea9b0717830335"},
+    {file = "dronefly_core-0.3.7-py3-none-any.whl", hash = "sha256:b39cd09c5c44c1a1b22d2dc5b3088da2984d5419b0b562b68a98d13ada99ff19"},
+    {file = "dronefly_core-0.3.7.tar.gz", hash = "sha256:a7d8888483a197cf13e145bfad0bf73d6039913b13109a9be9867453c4746f98"},
 ]
 
 [package.dependencies]
