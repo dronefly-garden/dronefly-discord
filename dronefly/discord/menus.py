@@ -195,18 +195,18 @@ class SelectLifeListTaxon(discord.ui.Select):
         page = view.current_page
         formatter = view.source._life_list_formatter
         self.taxa = formatter.get_page_of_taxa(page)
-        self.selected = selected
+        view.ctx.selected = selected
         for (value, taxon) in enumerate(self.taxa):
             self.append_option(
                 SelectTaxonOption(value, taxon, default=(value == selected))
             )
 
     async def callback(self, interaction: discord.Interaction):
-        self.selected = self.values[0]
-        await interaction.response.defer()
+        self.view.ctx.selected = self.values[0]
+        await self.view.update_source(interaction)
 
     def taxon(self):
-        return self.taxa[int(self.selected)]
+        return self.taxa[int(self.view.ctx.selected)]
 
 
 class DiscordBaseMenu(discord.ui.View):
@@ -263,6 +263,7 @@ class LifeListMenu(DiscordBaseMenu, CoreBaseMenu):
         await self.message.edit(view=None)
 
     async def start(self, ctx: commands.Context):
+        ctx.selected = 0
         self.ctx = ctx
         self.bot = self.cog.bot
         self.author = ctx.author
@@ -270,8 +271,11 @@ class LifeListMenu(DiscordBaseMenu, CoreBaseMenu):
         self.message = await self.send_initial_message(ctx)
 
     async def _get_kwargs_from_page(self, page):
+        selected = None
+        if isinstance(self.source, LifeListSource):
+            selected = self.ctx.selected
         value = await discord.utils.maybe_coroutine(
-            self._source.format_page, self, page
+            self._source.format_page, self, page, selected
         )
         if isinstance(value, dict):
             return value
@@ -312,6 +316,7 @@ class LifeListMenu(DiscordBaseMenu, CoreBaseMenu):
     ):
         page = await self._source.get_page(page_number)
         self.current_page = page_number
+        self.ctx.selected = selected
         kwargs = await self._get_kwargs_from_page(page)
         self.remove_item(self.select_taxon)
         self.select_taxon = SelectLifeListTaxon(view=self, selected=selected)
@@ -391,7 +396,7 @@ class LifeListMenu(DiscordBaseMenu, CoreBaseMenu):
                     and query_taxon.id != ROOT_TAXON_ID
                     and not self.root_taxon_id_stack
                     and self.current_page == 0
-                    and self.select_taxon.selected == 0
+                    and self.ctx.selected == 0
                 ):
                     if query_taxon.parent_id == ROOT_TAXON_ID:
                         # Simplify the request by removing the taxon filter
