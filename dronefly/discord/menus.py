@@ -5,7 +5,7 @@ import discord
 from discord.ext import commands
 from dronefly.core.menus import BaseMenu as CoreBaseMenu
 from dronefly.core.formatters import LifeListFormatter
-from dronefly.core.menus import LifeListSource
+from dronefly.core.menus import LifeListSource, ListPageSource
 from pyinaturalist import ROOT_TAXON_ID, Taxon
 
 
@@ -212,7 +212,7 @@ class SelectLifeListTaxon(discord.ui.Select):
 class DiscordBaseMenu(discord.ui.View):
     def __init__(
         self,
-        source: LifeListSource,
+        source: ListPageSource,
         timeout: int = 60,
         **kwargs: Any,
     ) -> None:
