@@ -191,15 +191,12 @@ class SelectLifeListTaxon(discord.ui.Select):
         placeholder: Optional[str] = "Select a taxon",
         selected: Optional[int] = 0,
     ):
-        super().__init__(min_values=1, max_values=1, placeholder=placeholder)
-        page = view.current_page
-        formatter = view.source._life_list_formatter
-        self.taxa = formatter.get_page_of_taxa(page)
         view.ctx.selected = selected
-        for (value, taxon) in enumerate(self.taxa):
-            self.append_option(
-                SelectTaxonOption(value, taxon, default=(value == selected))
-            )
+        self.taxa = self.get_page_of_taxa(view)
+        options = self.make_options(view, selected)
+        super().__init__(
+            min_values=1, max_values=1, placeholder=placeholder, options=options
+        )
 
     async def callback(self, interaction: discord.Interaction):
         self.view.ctx.selected = self.values[0]
@@ -207,6 +204,22 @@ class SelectLifeListTaxon(discord.ui.Select):
 
     def taxon(self):
         return self.taxa[int(self.view.ctx.selected)]
+
+    def update_options(self, view, selected):
+        view.ctx.selected = selected
+        self.taxa = self.get_page_of_taxa(view)
+        self.options = self.make_options(view, selected)
+
+    def get_page_of_taxa(self, view):
+        page = view.current_page
+        formatter = view.source._life_list_formatter
+        return formatter.get_page_of_taxa(page)
+
+    def make_options(self, view, selected):
+        options = []
+        for (value, taxon) in enumerate(self.taxa):
+            options.append(SelectTaxonOption(value, taxon, default=(value == selected)))
+        return options
 
 
 class DiscordBaseMenu(discord.ui.View):
@@ -318,9 +331,7 @@ class LifeListMenu(DiscordBaseMenu, CoreBaseMenu):
         self.current_page = page_number
         self.ctx.selected = selected
         kwargs = await self._get_kwargs_from_page(page)
-        self.remove_item(self.select_taxon)
-        self.select_taxon = SelectLifeListTaxon(view=self, selected=selected)
-        self.add_item(self.select_taxon)
+        self.select_taxon.update_options(view=self, selected=selected)
         if interaction.response.is_done():
             await interaction.edit_original_response(**kwargs, view=self)
         else:
