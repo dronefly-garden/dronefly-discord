@@ -192,8 +192,8 @@ class SelectLifeListTaxon(discord.ui.Select):
         selected: Optional[int] = 0,
     ):
         view.ctx.selected = selected
-        self.taxa = self.get_page_of_taxa(view)
-        options = self.make_options(view, selected)
+        self.taxa = self._get_page_of_taxa(view)
+        options = self._make_options(selected)
         super().__init__(
             min_values=1, max_values=1, placeholder=placeholder, options=options
         )
@@ -205,17 +205,17 @@ class SelectLifeListTaxon(discord.ui.Select):
     def taxon(self):
         return self.taxa[int(self.view.ctx.selected)]
 
-    def update_options(self, view, selected):
-        view.ctx.selected = selected
-        self.taxa = self.get_page_of_taxa(view)
-        self.options = self.make_options(view, selected)
+    def update_options(self, selected: Optional[int] = 0):
+        self.view.ctx.selected = selected
+        self.taxa = self._get_page_of_taxa(self.view)
+        self.options = self._make_options(selected)
 
-    def get_page_of_taxa(self, view):
+    def _get_page_of_taxa(self, view):
         page = view.current_page
         formatter = view.source._life_list_formatter
         return formatter.get_page_of_taxa(page)
 
-    def make_options(self, view, selected):
+    def _make_options(self, selected):
         options = []
         for (value, taxon) in enumerate(self.taxa):
             options.append(SelectTaxonOption(value, taxon, default=(value == selected)))
@@ -331,7 +331,7 @@ class LifeListMenu(DiscordBaseMenu, CoreBaseMenu):
         self.current_page = page_number
         self.ctx.selected = selected
         kwargs = await self._get_kwargs_from_page(page)
-        self.select_taxon.update_options(view=self, selected=selected)
+        self.select_taxon.update_options(selected)
         if interaction.response.is_done():
             await interaction.edit_original_response(**kwargs, view=self)
         else:
