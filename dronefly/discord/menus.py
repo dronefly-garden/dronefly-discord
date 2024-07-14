@@ -391,6 +391,8 @@ class LifeListMenu(DiscordBaseMenu, CoreBaseMenu):
         root_taxon_id = (
             self.root_taxon_id_stack[-1] if self.root_taxon_id_stack else None
         )
+        sort_by = formatter_kwargs.get("sort_by") or formatter.sort_by
+        order = formatter_kwargs.get("order") or formatter.order
         if toggle_taxon_root:
             if current_taxon.id in self.root_taxon_id_stack:
                 self.root_taxon_id_stack.pop()
@@ -442,6 +444,8 @@ class LifeListMenu(DiscordBaseMenu, CoreBaseMenu):
             with_direct=with_direct,
             with_common=with_common,
             root_taxon_id=root_taxon_id,
+            sort_by=sort_by,
+            order=order,
         )
         self._life_list_formatter = formatter
         # Replace the source
