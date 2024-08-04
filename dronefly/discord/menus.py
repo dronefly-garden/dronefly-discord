@@ -96,7 +96,7 @@ class PerRankButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction):
         view = self.view
         formatter = view.source._life_list_formatter
-        if formatter.per_rank == "leaf":
+        if formatter.per_rank in ("leaf", "child"):
             per_rank = "main"
         elif formatter.per_rank == "main":
             per_rank = "any"
@@ -124,7 +124,12 @@ class LeafButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction):
         view = self.view
         formatter = view.source._life_list_formatter
-        per_rank = "any" if formatter.per_rank == "leaf" else "leaf"
+        if formatter.per_rank == "leaf":
+            per_rank = "any"
+        elif formatter.per_rank == "child":
+            per_rank = "leaf"
+        else:
+            per_rank = "child"
         await view.update_source(interaction, per_rank=per_rank)
 
 
