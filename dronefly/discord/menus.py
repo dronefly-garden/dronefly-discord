@@ -312,18 +312,19 @@ class TaxonListMenu(DiscordBaseMenu, CoreBaseMenu):
         source = self.source
         page = await source.get_page(self.current_page)
         kwargs = await self._get_kwargs_from_page(page)
-        # Source modifier buttons:
-        self.leaf_button = LeafButton(discord.ButtonStyle.grey, 1)
-        self.per_rank_button = PerRankButton(discord.ButtonStyle.grey, 1)
-        self.root_button = RootButton(discord.ButtonStyle.grey, 1)
-        self.direct_button = DirectButton(discord.ButtonStyle.grey, 1)
-        self.add_item(self.leaf_button)
-        self.add_item(self.per_rank_button)
-        self.add_item(self.root_button)
-        self.add_item(self.direct_button)
-        if source._taxon_list_formatter.query_response.user:
-            self.common_button = CommonButton(discord.ButtonStyle.grey, 1)
-            self.add_item(self.common_button)
+        if getattr(self.formatter.taxa[0], "descendant_obs_count", None):
+            # Source modifier buttons for life list:
+            self.leaf_button = LeafButton(discord.ButtonStyle.grey, 1)
+            self.per_rank_button = PerRankButton(discord.ButtonStyle.grey, 1)
+            self.root_button = RootButton(discord.ButtonStyle.grey, 1)
+            self.direct_button = DirectButton(discord.ButtonStyle.grey, 1)
+            self.add_item(self.leaf_button)
+            self.add_item(self.per_rank_button)
+            self.add_item(self.root_button)
+            self.add_item(self.direct_button)
+            if source._taxon_list_formatter.query_response.user:
+                self.common_button = CommonButton(discord.ButtonStyle.grey, 1)
+                self.add_item(self.common_button)
         self.select_taxon = SelectTaxonListTaxon(view=self, selected=0)
         self.add_item(self.select_taxon)
         self.message = await ctx.send(**kwargs, view=self)
