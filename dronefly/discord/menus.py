@@ -4,8 +4,8 @@ from typing import Any, Optional
 import discord
 from discord.ext import commands
 from dronefly.core.menus import BaseMenu as CoreBaseMenu
-from dronefly.core.formatters import LifeListFormatter
-from dronefly.core.menus import LifeListSource, ListPageSource
+from dronefly.core.formatters import TaxonListFormatter
+from dronefly.core.menus import TaxonListSource, ListPageSource
 from pyinaturalist import ROOT_TAXON_ID, Taxon
 
 
@@ -95,7 +95,7 @@ class PerRankButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction):
         view = self.view
-        formatter = view.source._life_list_formatter
+        formatter = view.source._taxon_list_formatter
         if formatter.per_rank in ("leaf", "child"):
             per_rank = "main"
         elif formatter.per_rank == "main":
@@ -123,7 +123,7 @@ class LeafButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction):
         view = self.view
-        formatter = view.source._life_list_formatter
+        formatter = view.source._taxon_list_formatter
         if formatter.per_rank == "leaf":
             per_rank = "any"
         elif formatter.per_rank == "child":
@@ -159,7 +159,7 @@ class DirectButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction):
         view = self.view
-        formatter = view.source._life_list_formatter
+        formatter = view.source._taxon_list_formatter
         await view.update_source(interaction, with_direct=not formatter.with_direct)
 
 
@@ -175,7 +175,7 @@ class CommonButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction):
         view = self.view
-        formatter = view.source._life_list_formatter
+        formatter = view.source._taxon_list_formatter
         await view.update_source(interaction, with_common=not formatter.with_common)
 
 
@@ -189,7 +189,7 @@ class SelectTaxonOption(discord.SelectOption):
         super().__init__(label=taxon.full_name, value=str(value), default=default)
 
 
-class SelectLifeListTaxon(discord.ui.Select):
+class SelectTaxonListTaxon(discord.ui.Select):
     def __init__(
         self,
         view: discord.ui.View,
@@ -217,7 +217,7 @@ class SelectLifeListTaxon(discord.ui.Select):
 
     def _get_page_of_taxa(self, view):
         page = view.current_page
-        formatter = view.source._life_list_formatter
+        formatter = view.source._taxon_list_formatter
         return formatter.get_page_of_taxa(page)
 
     def _make_options(self, selected):
@@ -240,7 +240,7 @@ class DiscordBaseMenu(discord.ui.View):
         )
 
 
-class LifeListMenu(DiscordBaseMenu, CoreBaseMenu):
+class TaxonListMenu(DiscordBaseMenu, CoreBaseMenu):
     def __init__(
         self,
         cog: commands.Cog,
@@ -290,7 +290,7 @@ class LifeListMenu(DiscordBaseMenu, CoreBaseMenu):
 
     async def _get_kwargs_from_page(self, page):
         selected = None
-        if isinstance(self.source, LifeListSource):
+        if isinstance(self.source, TaxonListSource):
             selected = self.ctx.selected
         value = await discord.utils.maybe_coroutine(
             self._source.format_page, self, page, selected
@@ -321,10 +321,10 @@ class LifeListMenu(DiscordBaseMenu, CoreBaseMenu):
         self.add_item(self.per_rank_button)
         self.add_item(self.root_button)
         self.add_item(self.direct_button)
-        if source._life_list_formatter.query_response.user:
+        if source._taxon_list_formatter.query_response.user:
             self.common_button = CommonButton(discord.ButtonStyle.grey, 1)
             self.add_item(self.common_button)
-        self.select_taxon = SelectLifeListTaxon(view=self, selected=0)
+        self.select_taxon = SelectTaxonListTaxon(view=self, selected=0)
         self.add_item(self.select_taxon)
         self.message = await ctx.send(**kwargs, view=self)
         return self.message
@@ -373,7 +373,7 @@ class LifeListMenu(DiscordBaseMenu, CoreBaseMenu):
         return True
 
     @property
-    def formatter(self) -> LifeListFormatter:
+    def formatter(self) -> TaxonListFormatter:
         return self.source.formatter
 
     async def update_source(self, interaction: discord.Interaction, **formatter_kwargs):
@@ -390,7 +390,7 @@ class LifeListMenu(DiscordBaseMenu, CoreBaseMenu):
             with_common = formatter.with_common
         toggle_taxon_root = formatter_kwargs.get("toggle_taxon_root")
         per_page = formatter.per_page
-        life_list = formatter.life_list
+        taxon_list = formatter.taxon_list
         query_response = formatter.query_response
         current_taxon = self.select_taxon.taxon()
         root_taxon_id = (
@@ -429,10 +429,12 @@ class LifeListMenu(DiscordBaseMenu, CoreBaseMenu):
                             taxa = await paginator.async_all()
                             query_response.taxon = taxa[0] if taxa else None
 
-                    # And in either case, get a new life_list for the updated query response:
+                    # And in either case, get a new taxon_list for the updated query response:
                     life_list = await self.ctx.inat_client.observations.life_list(
                         **query_response.obs_args()
                     )
+                    if life_list:
+                        taxon_list = life_list.data
                     # The first taxon on page 0 is selected:
                     root_taxon_id = None
                     current_taxon = None
@@ -440,8 +442,8 @@ class LifeListMenu(DiscordBaseMenu, CoreBaseMenu):
                     root_taxon_id = current_taxon.id
                     self.root_taxon_id_stack.append(root_taxon_id)
         # Replace the formatter; TODO: support updating existing formatter
-        formatter = LifeListFormatter(
-            life_list,
+        formatter = TaxonListFormatter(
+            taxon_list,
             per_rank,
             query_response,
             with_taxa=True,
@@ -452,7 +454,7 @@ class LifeListMenu(DiscordBaseMenu, CoreBaseMenu):
             sort_by=sort_by,
             order=order,
         )
-        self._life_list_formatter = formatter
+        self._taxon_list_formatter = formatter
         # Replace the source
         self._source = self._source.__class__(formatter)
         # Find the current taxon
