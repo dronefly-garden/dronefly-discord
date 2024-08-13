@@ -22,7 +22,7 @@ pyinaturalist = { git = "https://github.com/pyinat/pyinaturalist", rev="12c04689
 inflect = "^5.3.0"
 discord-py = ">=2.3.1"
 # dronefly-core = "=0.3.9.dev0"
-dronefly-core = { git = "https://github.com/dronefly-garden/dronefly-core", rev="eb75bae801ce8a8920657cac4177c6116dce3407" }
+dronefly-core = { git = "https://github.com/dronefly-garden/dronefly-core", rev="c8a1fb38ba6ac6392960b4b0861b1b0076d1f2ae" }
 
 [tool.poetry.dev-dependencies]
 black = "^24.3.0"
