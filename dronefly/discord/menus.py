@@ -293,7 +293,7 @@ class QueryPlaceButton(discord.ui.Button):
     ):
         super().__init__(style=style, row=row)
         self.style = style
-        self.emoji = "\N{EARTH GLOBE EUROPE-AFRICA}"
+        self.emoji = "\N{EARTH GLOBE EUROPE-AFRICA}\N{VARIATION SELECTOR-16}"
 
     async def callback(self, interaction: discord.Interaction):
         # await self.view.show_checked_page(self.view.current_page + 1, interaction)
