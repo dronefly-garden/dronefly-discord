@@ -240,6 +240,81 @@ class DiscordBaseMenu(discord.ui.View):
         )
 
 
+class UserButton(discord.ui.Button):
+    def __init__(
+        self,
+        style: discord.ButtonStyle,
+        row: Optional[int],
+    ):
+        super().__init__(style=style, row=row)
+        self.style = style
+        self.emoji = "\N{BUST IN SILHOUETTE}\N{VARIATION SELECTOR-16}"
+
+    async def callback(self, interaction: discord.Interaction):
+        # await self.view.show_checked_page(self.view.current_page + 1, interaction)
+        pass
+
+
+class QueryUserButton(discord.ui.Button):
+    def __init__(
+        self,
+        style: discord.ButtonStyle,
+        row: Optional[int],
+    ):
+        super().__init__(style=style, row=row)
+        self.style = style
+        self.emoji = "\N{BUSTS IN SILHOUETTE}\N{VARIATION SELECTOR-16}"
+
+    async def callback(self, interaction: discord.Interaction):
+        # await self.view.show_checked_page(self.view.current_page + 1, interaction)
+        pass
+
+
+class HomePlaceButton(discord.ui.Button):
+    def __init__(
+        self,
+        style: discord.ButtonStyle,
+        row: Optional[int],
+    ):
+        super().__init__(style=style, row=row)
+        self.style = style
+        self.emoji = "\N{HOUSE BUILDING}\N{VARIATION SELECTOR-16}"
+
+    async def callback(self, interaction: discord.Interaction):
+        # await self.view.show_checked_page(self.view.current_page + 1, interaction)
+        pass
+
+
+class QueryPlaceButton(discord.ui.Button):
+    def __init__(
+        self,
+        style: discord.ButtonStyle,
+        row: Optional[int],
+    ):
+        super().__init__(style=style, row=row)
+        self.style = style
+        self.emoji = "\N{EARTH GLOBE EUROPE-AFRICA}"
+
+    async def callback(self, interaction: discord.Interaction):
+        # await self.view.show_checked_page(self.view.current_page + 1, interaction)
+        pass
+
+
+class TaxonomyButton(discord.ui.Button):
+    def __init__(
+        self,
+        style: discord.ButtonStyle,
+        row: Optional[int],
+    ):
+        super().__init__(style=style, row=row)
+        self.style = style
+        self.emoji = "\N{REGIONAL INDICATOR SYMBOL LETTER T}\N{VARIATION SELECTOR-16}"
+
+    async def callback(self, interaction: discord.Interaction):
+        # await self.view.show_checked_page(self.view.current_page + 1, interaction)
+        pass
+
+
 class TaxonListMenu(DiscordBaseMenu, CoreBaseMenu):
     def __init__(
         self,
@@ -493,3 +568,27 @@ class TaxonListMenu(DiscordBaseMenu, CoreBaseMenu):
             page = 0
             selected = 0
         await self.show_page(page, interaction, selected)
+
+
+class TaxonMenu(DiscordBaseMenu, CoreBaseMenu):
+    def __init__(
+        self,
+        cog: commands.Cog,
+        message: discord.Message = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(**kwargs)
+        self.cog = cog
+        self.bot = None
+        self.message = message
+        self.ctx = None
+        self.author: Optional[discord.Member] = None
+        self.user_button = UserButton(discord.ButtonStyle.grey, 0)
+        self.query_user_button = QueryUserButton(discord.ButtonStyle.grey, 0)
+        self.taxonomy_button = TaxonomyButton(discord.ButtonStyle.grey, 0)
+        self.stop_button = StopButton(discord.ButtonStyle.red, 0)
+        self.add_item(self.stop_button)
+        self.add_item(self.first_item)
+        self.add_item(self.back_button)
+        self.add_item(self.forward_button)
+        self.add_item(self.last_item)
