@@ -4,7 +4,7 @@ from typing import Any, Optional
 import discord
 from discord.ext import commands
 from dronefly.core.menus import BaseMenu as CoreBaseMenu
-from dronefly.core.formatters import TaxonListFormatter
+from dronefly.core.formatters import TaxonFormatter, TaxonListFormatter
 from dronefly.core.menus import TaxonListSource, ListPageSource
 from pyinaturalist import ROOT_TAXON_ID, Taxon
 
@@ -246,9 +246,9 @@ class UserButton(discord.ui.Button):
         style: discord.ButtonStyle,
         row: Optional[int],
     ):
-        super().__init__(style=style, row=row)
+        super().__init__(style=style, row=row, custom_id="user")
         self.style = style
-        self.emoji = "\N{BUST IN SILHOUETTE}\N{VARIATION SELECTOR-16}"
+        self.emoji = "\N{BUST IN SILHOUETTE}"
 
     async def callback(self, interaction: discord.Interaction):
         # await self.view.show_checked_page(self.view.current_page + 1, interaction)
@@ -261,9 +261,9 @@ class QueryUserButton(discord.ui.Button):
         style: discord.ButtonStyle,
         row: Optional[int],
     ):
-        super().__init__(style=style, row=row)
+        super().__init__(style=style, row=row, custom_id="query_user")
         self.style = style
-        self.emoji = "\N{BUSTS IN SILHOUETTE}\N{VARIATION SELECTOR-16}"
+        self.emoji = "\N{BUSTS IN SILHOUETTE}"
 
     async def callback(self, interaction: discord.Interaction):
         # await self.view.show_checked_page(self.view.current_page + 1, interaction)
@@ -276,9 +276,9 @@ class HomePlaceButton(discord.ui.Button):
         style: discord.ButtonStyle,
         row: Optional[int],
     ):
-        super().__init__(style=style, row=row)
+        super().__init__(style=style, row=row, custom_id="home_place")
         self.style = style
-        self.emoji = "\N{HOUSE BUILDING}\N{VARIATION SELECTOR-16}"
+        self.emoji = "\N{HOUSE BUILDING}"
 
     async def callback(self, interaction: discord.Interaction):
         # await self.view.show_checked_page(self.view.current_page + 1, interaction)
@@ -291,9 +291,9 @@ class QueryPlaceButton(discord.ui.Button):
         style: discord.ButtonStyle,
         row: Optional[int],
     ):
-        super().__init__(style=style, row=row)
+        super().__init__(style=style, row=row, custom_id="query_place")
         self.style = style
-        self.emoji = "\N{EARTH GLOBE EUROPE-AFRICA}\N{VARIATION SELECTOR-16}"
+        self.emoji = "\N{EARTH GLOBE EUROPE-AFRICA}"
 
     async def callback(self, interaction: discord.Interaction):
         # await self.view.show_checked_page(self.view.current_page + 1, interaction)
@@ -306,13 +306,14 @@ class TaxonomyButton(discord.ui.Button):
         style: discord.ButtonStyle,
         row: Optional[int],
     ):
-        super().__init__(style=style, row=row)
+        super().__init__(style=style, row=row, custom_id="taxonomy")
         self.style = style
-        self.emoji = "\N{REGIONAL INDICATOR SYMBOL LETTER T}\N{VARIATION SELECTOR-16}"
+        self.emoji = "\N{REGIONAL INDICATOR SYMBOL LETTER T}"
 
     async def callback(self, interaction: discord.Interaction):
-        # await self.view.show_checked_page(self.view.current_page + 1, interaction)
-        pass
+        await interaction.response.defer()
+        self.view.source.toggle_ancestors()
+        await self.view.show_page(interaction)
 
 
 class TaxonListMenu(DiscordBaseMenu, CoreBaseMenu):
@@ -587,8 +588,75 @@ class TaxonMenu(DiscordBaseMenu, CoreBaseMenu):
         self.query_user_button = QueryUserButton(discord.ButtonStyle.grey, 0)
         self.taxonomy_button = TaxonomyButton(discord.ButtonStyle.grey, 0)
         self.stop_button = StopButton(discord.ButtonStyle.red, 0)
+        self.add_item(self.user_button)
+        self.add_item(self.query_user_button)
+        self.add_item(self.taxonomy_button)
         self.add_item(self.stop_button)
-        self.add_item(self.first_item)
-        self.add_item(self.back_button)
-        self.add_item(self.forward_button)
-        self.add_item(self.last_item)
+
+    @property
+    def source(self):
+        return self._source
+
+    async def on_timeout(self):
+        await self.message.edit(view=None)
+
+    async def start(self, ctx: commands.Context):
+        self.ctx = ctx
+        self.bot = self.cog.bot
+        self.author = ctx.author
+        # await self.source._prepare_once()
+        self.message = await self.send_initial_message(ctx)
+
+    async def _get_kwargs_from_page(self):
+        value = await discord.utils.maybe_coroutine(self._source.format_page)
+        if isinstance(value, dict):
+            return value
+        elif isinstance(value, str):
+            return {"content": value, "embed": None}
+        elif isinstance(value, discord.Embed):
+            return {"embed": value, "content": None}
+
+    async def send_initial_message(self, ctx: commands.Context):
+        """|coro|
+        The default implementation of :meth:`Menu.send_initial_message`
+        for the interactive pagination session.
+        This implementation shows the first page of the source.
+        """
+        self.ctx = ctx
+        kwargs = await self._get_kwargs_from_page()
+        self.message = await ctx.send(**kwargs, view=self)
+        return self.message
+
+    async def show_page(self, interaction: discord.Interaction):
+        self.current_page = 0
+        kwargs = await self._get_kwargs_from_page()
+        if interaction.response.is_done():
+            await interaction.edit_original_response(**kwargs, view=self)
+        else:
+            await interaction.response.edit_message(**kwargs, view=self)
+
+    async def interaction_check(self, interaction: discord.Interaction):
+        """Allow owner and known iNat user interactions."""
+        # Only some buttons can be pressed by known users:
+        if interaction.data.get("custom_id") in [
+            "user",
+            "query_user",
+            "home_place",
+            "query_place",
+            "taxonomy",
+        ]:
+            return bool(self.ctx.inat_client.ctx.author.inat_user_id)
+        elif interaction.user.id not in (
+            *interaction.client.owner_ids,
+            getattr(self.author, "id", None),
+        ):
+            # Other buttons can only be pressed by the owner:
+            await interaction.response.send_message(
+                content="You are not authorized to interact with this.", ephemeral=True
+            )
+            return False
+        return True
+
+    @property
+    def formatter(self) -> TaxonFormatter:
+        return self.source.formatter
