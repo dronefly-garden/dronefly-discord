@@ -526,7 +526,6 @@ class TaxonListMenu(DiscordBaseMenu, CoreBaseMenu):
             formatter,
             per_rank=per_rank,
             per_page=per_page,
-            root_taxon_id=root_taxon_id,
             sort_by=sort_by,
             order=order,
         )
