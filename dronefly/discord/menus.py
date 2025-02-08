@@ -95,20 +95,20 @@ class PerRankButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction):
         view = self.view
-        formatter = view.source._taxon_list_formatter
-        if formatter.per_rank in ("leaf", "child"):
-            per_rank = "main"
-        elif formatter.per_rank == "main":
-            per_rank = "any"
-        elif formatter.per_rank == "any":
+        per_rank = view.source.per_rank
+        if view.source.per_rank in ("leaf", "child"):
+            _per_rank = "main"
+        elif per_rank == "main":
+            _per_rank = "any"
+        elif per_rank == "any":
             current_taxon = view.select_taxon.taxon()
             if current_taxon:
-                per_rank = current_taxon.rank
+                _per_rank = current_taxon.rank
             else:
-                per_rank = "main"
+                _per_rank = "main"
         else:
-            per_rank = "main"
-        await view.update_source(interaction, per_rank=per_rank)
+            _per_rank = "main"
+        await view.update_source(interaction, per_rank=_per_rank)
 
 
 class LeafButton(discord.ui.Button):
@@ -123,14 +123,14 @@ class LeafButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction):
         view = self.view
-        formatter = view.source._taxon_list_formatter
-        if formatter.per_rank == "leaf":
-            per_rank = "any"
-        elif formatter.per_rank == "child":
-            per_rank = "leaf"
+        per_rank = view.source.per_rank
+        if per_rank == "leaf":
+            _per_rank = "any"
+        elif per_rank == "child":
+            _per_rank = "leaf"
         else:
-            per_rank = "child"
-        await view.update_source(interaction, per_rank=per_rank)
+            _per_rank = "child"
+        await view.update_source(interaction, per_rank=_per_rank)
 
 
 class RootButton(discord.ui.Button):
@@ -194,10 +194,11 @@ class SelectTaxonListTaxon(discord.ui.Select):
         self,
         view: discord.ui.View,
         placeholder: Optional[str] = "Select a taxon",
+        page: list[Taxon] = [],
         selected: Optional[int] = 0,
     ):
         view.ctx.selected = selected
-        self.taxa = self._get_page_of_taxa(view)
+        self.taxa = page
         options = self._make_options(selected)
         super().__init__(
             min_values=1, max_values=1, placeholder=placeholder, options=options
@@ -210,15 +211,10 @@ class SelectTaxonListTaxon(discord.ui.Select):
     def taxon(self):
         return self.taxa[int(self.view.ctx.selected)]
 
-    def update_options(self, selected: Optional[int] = 0):
+    def update_options(self, page=list[Taxon], selected: Optional[int] = 0):
         self.view.ctx.selected = selected
-        self.taxa = self._get_page_of_taxa(self.view)
+        self.taxa = page
         self.options = self._make_options(selected)
-
-    def _get_page_of_taxa(self, view):
-        page = view.current_page
-        formatter = view.source._taxon_list_formatter
-        return formatter.get_page_of_taxa(page)
 
     def _make_options(self, selected):
         options = []
@@ -369,7 +365,7 @@ class TaxonListMenu(DiscordBaseMenu, CoreBaseMenu):
         if isinstance(self.source, TaxonListSource):
             selected = self.ctx.selected
         value = await discord.utils.maybe_coroutine(
-            self._source.format_page, self, page, selected
+            self.source.format_page, page, self.current_page, selected
         )
         if isinstance(value, dict):
             return value
@@ -385,10 +381,9 @@ class TaxonListMenu(DiscordBaseMenu, CoreBaseMenu):
         This implementation shows the first page of the source.
         """
         self.ctx = ctx
-        source = self.source
-        page = await source.get_page(self.current_page)
+        page = await self._source.get_page(self.current_page)
         kwargs = await self._get_kwargs_from_page(page)
-        if getattr(self.formatter.taxa[0], "descendant_obs_count", None):
+        if getattr(page[0], "descendant_obs_count", None):
             # Source modifier buttons for life list:
             self.leaf_button = LeafButton(discord.ButtonStyle.grey, 1)
             self.per_rank_button = PerRankButton(discord.ButtonStyle.grey, 1)
@@ -398,10 +393,10 @@ class TaxonListMenu(DiscordBaseMenu, CoreBaseMenu):
             self.add_item(self.per_rank_button)
             self.add_item(self.root_button)
             self.add_item(self.direct_button)
-            if source._taxon_list_formatter.query_response.user:
+            if self._source.query_response.user:
                 self.common_button = CommonButton(discord.ButtonStyle.grey, 1)
                 self.add_item(self.common_button)
-        self.select_taxon = SelectTaxonListTaxon(view=self, selected=0)
+        self.select_taxon = SelectTaxonListTaxon(view=self, page=page, selected=0)
         self.add_item(self.select_taxon)
         self.message = await ctx.send(**kwargs, view=self)
         return self.message
@@ -413,7 +408,7 @@ class TaxonListMenu(DiscordBaseMenu, CoreBaseMenu):
         self.current_page = page_number
         self.ctx.selected = selected
         kwargs = await self._get_kwargs_from_page(page)
-        self.select_taxon.update_options(selected)
+        self.select_taxon.update_options(page, selected)
         if interaction.response.is_done():
             await interaction.edit_original_response(**kwargs, view=self)
         else:
@@ -453,28 +448,27 @@ class TaxonListMenu(DiscordBaseMenu, CoreBaseMenu):
     def formatter(self) -> TaxonListFormatter:
         return self.source.formatter
 
-    async def update_source(self, interaction: discord.Interaction, **formatter_kwargs):
+    async def update_source(self, interaction: discord.Interaction, **kwargs):
         await interaction.response.defer()
         # Replace the source with a new source, preserving the currently
         # selected taxon
-        formatter = self.formatter
-        per_rank = formatter_kwargs.get("per_rank") or formatter.per_rank
-        with_direct = formatter_kwargs.get("with_direct")
+        per_rank = kwargs.get("per_rank") or self.source.per_rank
+        with_direct = kwargs.get("with_direct")
         if with_direct is None:
-            with_direct = formatter.with_direct
-        with_common = formatter_kwargs.get("with_common")
+            with_direct = self.formatter.with_direct
+        with_common = kwargs.get("with_common")
         if with_common is None:
-            with_common = formatter.with_common
-        toggle_taxon_root = formatter_kwargs.get("toggle_taxon_root")
-        per_page = formatter.per_page
-        taxon_list = formatter.taxon_list
-        query_response = formatter.query_response
+            with_common = self.formatter.with_common
+        toggle_taxon_root = kwargs.get("toggle_taxon_root")
+        per_page = self.source.per_page
+        taxon_list = self.source._entries
+        query_response = self.source.query_response
         current_taxon = self.select_taxon.taxon()
         root_taxon_id = (
             self.root_taxon_id_stack[-1] if self.root_taxon_id_stack else None
         )
-        sort_by = formatter_kwargs.get("sort_by") or formatter.sort_by
-        order = formatter_kwargs.get("order") or formatter.order
+        sort_by = kwargs.get("sort_by") or self.source.sort_by
+        order = kwargs.get("order") or self.source.order
         if toggle_taxon_root:
             if current_taxon.id in self.root_taxon_id_stack:
                 self.root_taxon_id_stack.pop()
@@ -520,20 +514,22 @@ class TaxonListMenu(DiscordBaseMenu, CoreBaseMenu):
                     self.root_taxon_id_stack.append(root_taxon_id)
         # Replace the formatter; TODO: support updating existing formatter
         formatter = TaxonListFormatter(
-            taxon_list,
-            per_rank,
-            query_response,
             with_taxa=True,
-            per_page=per_page,
             with_direct=with_direct,
             with_common=with_common,
+        )
+        self._taxon_list_formatter = formatter
+        # Replace the source
+        self._source = self._source.__class__(
+            taxon_list,
+            query_response,
+            formatter,
+            per_rank=per_rank,
+            per_page=per_page,
             root_taxon_id=root_taxon_id,
             sort_by=sort_by,
             order=order,
         )
-        self._taxon_list_formatter = formatter
-        # Replace the source
-        self._source = self._source.__class__(formatter)
         # Find the current taxon
         if current_taxon:
             # Find the taxon or the first taxon that is a descendant of it (e.g.
@@ -542,7 +538,7 @@ class TaxonListMenu(DiscordBaseMenu, CoreBaseMenu):
             taxon_index = next(
                 (
                     i
-                    for i, taxon in enumerate(formatter.taxa)
+                    for i, taxon in enumerate(self.source.entries)
                     if current_taxon.id == taxon.id
                     or current_taxon.id in (t.id for t in taxon.ancestors)
                 ),
@@ -555,7 +551,7 @@ class TaxonListMenu(DiscordBaseMenu, CoreBaseMenu):
                 ancestor_indices = reversed(
                     list(
                         i
-                        for i, taxon in enumerate(formatter.taxa)
+                        for i, taxon in enumerate(self.source.entries)
                         if taxon.id in (t.id for t in current_taxon.ancestors)
                     )
                 )
