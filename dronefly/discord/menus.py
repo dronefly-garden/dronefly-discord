@@ -5,8 +5,26 @@ import discord
 from discord.ext import commands
 from dronefly.core.menus import BaseMenu as CoreBaseMenu
 from dronefly.core.formatters import TaxonFormatter, TaxonListFormatter
-from dronefly.core.menus import TaxonListSource, ListPageSource
+from dronefly.core.menus import TaxonListSource as CoreTaxonListSource, ListPageSource
 from pyinaturalist import ROOT_TAXON_ID, Taxon
+
+from .embeds import make_embed
+
+
+class TaxonListSource(CoreTaxonListSource):
+    def format_page(
+        self, page: list[Taxon], page_number: int = 0, selected: Optional[int] = None
+    ):
+        formatter = self._taxon_list_formatter
+        query_response = self.query_response
+        embed = make_embed(
+            title=f"{self.formatter.short_description} {query_response.obs_query_description()}"
+        )
+        if self._url:
+            embed.url = self._url
+        embed.description = formatter.format_page(page, page_number, selected)
+        embed.set_footer(text=f"Page {page_number + 1}/{self.get_max_pages()}")
+        return embed
 
 
 class StopButton(discord.ui.Button):
