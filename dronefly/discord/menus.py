@@ -3,12 +3,16 @@ from typing import Any, Optional
 
 import discord
 from discord.ext import commands
-from dronefly.core.menus import BaseMenu as CoreBaseMenu
 from dronefly.core.formatters import TaxonFormatter, TaxonListFormatter
-from dronefly.core.menus import TaxonListSource as CoreTaxonListSource, ListPageSource
+from dronefly.core.menus import (
+    BaseMenu as CoreBaseMenu,
+    TaxonListSource as CoreTaxonListSource,
+    TaxonSource as CoreTaxonSource,
+    ListPageSource,
+)
 from pyinaturalist import ROOT_TAXON_ID, Taxon
 
-from .embeds import make_embed
+from .embeds import make_embed, make_taxa_embed
 
 
 class TaxonListSource(CoreTaxonListSource):
@@ -583,6 +587,18 @@ class TaxonListMenu(DiscordBaseMenu, CoreBaseMenu):
             page = 0
             selected = 0
         await self.show_page(page, interaction, selected)
+
+
+class TaxonSource(CoreTaxonSource):
+    def format_page(self):
+        embed = make_taxa_embed(
+            taxon=self.query_response.taxon,
+            formatter=self.formatter,
+            description=self.formatter.format(
+                with_title=False, with_ancestors=self.with_ancestors
+            ),
+        )
+        return embed
 
 
 class TaxonMenu(DiscordBaseMenu, CoreBaseMenu):
