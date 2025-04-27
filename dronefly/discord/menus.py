@@ -258,36 +258,6 @@ class DiscordBaseMenu(discord.ui.View):
         )
 
 
-class UserButton(discord.ui.Button):
-    def __init__(
-        self,
-        style: discord.ButtonStyle,
-        row: Optional[int],
-    ):
-        super().__init__(style=style, row=row, custom_id="user")
-        self.style = style
-        self.emoji = "\N{BUST IN SILHOUETTE}"
-
-    async def callback(self, interaction: discord.Interaction):
-        # await self.view.show_checked_page(self.view.current_page + 1, interaction)
-        pass
-
-
-class QueryUserButton(discord.ui.Button):
-    def __init__(
-        self,
-        style: discord.ButtonStyle,
-        row: Optional[int],
-    ):
-        super().__init__(style=style, row=row, custom_id="query_user")
-        self.style = style
-        self.emoji = "\N{BUSTS IN SILHOUETTE}"
-
-    async def callback(self, interaction: discord.Interaction):
-        # await self.view.show_checked_page(self.view.current_page + 1, interaction)
-        pass
-
-
 class HomePlaceButton(discord.ui.Button):
     def __init__(
         self,
@@ -614,12 +584,8 @@ class TaxonMenu(DiscordBaseMenu, CoreBaseMenu):
         self.message = message
         self.ctx = None
         self.author: Optional[discord.Member] = None
-        self.user_button = UserButton(discord.ButtonStyle.grey, 0)
-        self.query_user_button = QueryUserButton(discord.ButtonStyle.grey, 0)
         self.taxonomy_button = TaxonomyButton(discord.ButtonStyle.grey, 0)
         self.stop_button = StopButton(discord.ButtonStyle.red, 0)
-        self.add_item(self.user_button)
-        self.add_item(self.query_user_button)
         self.add_item(self.taxonomy_button)
         self.add_item(self.stop_button)
 
