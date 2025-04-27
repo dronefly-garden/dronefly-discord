@@ -17,12 +17,11 @@ packages = [
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.12"
-pyinaturalist = "^0.20.0"
 inflect = "^5.3.0"
 discord-py = ">=2.3.1"
-dronefly-core = "=0.4.2"
+dronefly-core = { git = "https://github.com/dronefly-garden/dronefly-core@PR-taxon-menu" }
 
-[tool.poetry.dev-dependencies]
+[tool.poetry.group.dev.dependencies]
 black = "^24.3.0"
 pytest = "^7.2.1"
 pytest-mock = "^3.10.0"
