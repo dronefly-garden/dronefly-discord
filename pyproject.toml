@@ -19,7 +19,7 @@ packages = [
 python = ">=3.11,<3.12"
 inflect = "^5.3.0"
 discord-py = ">=2.3.1"
-dronefly-core = { git = "https://github.com/dronefly-garden/dronefly-core@PR-taxon-menu" }
+dronefly-core = { git = "https://github.com/dronefly-garden/dronefly-core@PR-taxon-menu", rev="e738208137ddf3cffbe992d7d6da343d651aace1" }
 
 [tool.poetry.group.dev.dependencies]
 black = "^24.3.0"
