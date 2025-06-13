@@ -477,6 +477,7 @@ class TaxonListMenu(DiscordBaseMenu, CoreBaseMenu):
         with_common = kwargs.get("with_common")
         if with_common is None:
             with_common = self.formatter.with_common
+        short_description = self.formatter.short_description
         toggle_taxon_root = kwargs.get("toggle_taxon_root")
         per_page = self.source.per_page
         taxon_list = self.source._entries
@@ -535,6 +536,7 @@ class TaxonListMenu(DiscordBaseMenu, CoreBaseMenu):
             with_taxa=True,
             with_direct=with_direct,
             with_common=with_common,
+            short_description=short_description,
         )
         self._taxon_list_formatter = formatter
         # Replace the source
