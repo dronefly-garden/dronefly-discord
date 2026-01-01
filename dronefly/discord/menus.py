@@ -10,7 +10,9 @@ from dronefly.core.menus import (
     TaxonSource as CoreTaxonSource,
     ListPageSource,
 )
-from pyinaturalist import ROOT_TAXON_ID, Taxon
+from dronefly.core.menus.counts import CountsFormatter, CountsSource
+from dronefly.core.query import get_user_count
+from pyinaturalist import ROOT_TAXON_ID, Taxon, User
 
 from .embeds import make_embed, make_taxa_embed
 
@@ -595,6 +597,18 @@ class TaxonMenu(DiscordBaseMenu, CoreBaseMenu):
     def source(self):
         return self._source
 
+    @property
+    def dronefly_ctx(self):
+        return self.ctx.inat_client.ctx
+
+    @property
+    def dronefly_author(self):
+        return self.dronefly_ctx.author
+
+    @property
+    def inat_user_id(self):
+        return self.dronefly_ctx.author.inat_user_id if self.dronefly_author else None
+
     async def on_timeout(self):
         await self.message.edit(view=None)
 
@@ -641,9 +655,9 @@ class TaxonMenu(DiscordBaseMenu, CoreBaseMenu):
             "query_user",
             "home_place",
             "query_place",
-            "taxonomy",
+            # "taxonomy",
         ]:
-            return bool(self.ctx.inat_client.ctx.author.inat_user_id)
+            return bool(self.inat_user_id)
         elif interaction.user.id not in (
             *interaction.client.owner_ids,
             getattr(self.author, "id", None),
@@ -658,3 +672,62 @@ class TaxonMenu(DiscordBaseMenu, CoreBaseMenu):
     @property
     def formatter(self) -> TaxonFormatter:
         return self.source.formatter
+
+    @property
+    def counts_formatter(self) -> CountsFormatter:
+        return self.formatter.counts_formatter
+
+    @property
+    def counts_page(self) -> str:
+        return self.formatter.counts_page
+
+    @counts_formatter.setter
+    def counts_formatter(self, formatter):
+        self.formatter.counts_formatter = formatter
+
+    @counts_page.setter
+    def counts_page(self, page):
+        self.formatter.counts_page = page
+
+    @property
+    def counts_source(self) -> CountsSource:
+        return self.counts_formatter.source if self.counts_formatter else None
+
+    async def toggle_user_count(self, interaction, user: User):
+        query_response = self.source.query_response
+        counts_formatter = self.counts_formatter
+        await interaction.response.defer()
+        user_count = None
+        if self.counts_source:
+            user_count = next(
+                (count for count in self.counts_source.entries if count.id == user.id),
+                None,
+            )
+        if user_count is not None:
+            self.counts_source.entries.remove(user_count)
+        else:
+            user_count = await get_user_count(
+                self.ctx.inat_client, query_response, user
+            )
+            if self.counts_source:
+                # A source already exists. Just append the count:
+                self.counts_source.entries.append(user_count)
+            else:
+                # Create both a new source and formatter for counts
+                # with the user count as its only entry and link them
+                # back to the taxon formatter:
+                counts_formatter = CountsFormatter()
+                counts_source = CountsSource(
+                    entries=[user_count],
+                    query_response=query_response,
+                    counts_formatter=counts_formatter,
+                    per_page=15,  # FIXME: magic number!
+                )
+                counts_formatter.source = counts_source
+                self.counts_formatter = counts_formatter
+        # One way or the other, we now have a counts formatter attached. All that remains
+        # is to populate it with new content and regenerate the formatted taxon page
+        # to include it:
+        counts_page = await self.counts_source.get_page(page_number=0)
+        self.formatter.counts_page = counts_page
+        self.source.update_page()
