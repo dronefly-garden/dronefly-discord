@@ -280,19 +280,6 @@ class UserButton(discord.ui.Button):
         await self.view.source.toggle_user_count(inat_client, user)
         await self.view.show_page(interaction)
 
-    async def interaction_check(self, interaction: discord.Interaction):
-        """Just extends the default reaction_check to check if owner is registered here."""
-        view = self.view
-        dronefly_config = view.dronefly_ctx.config
-        try:
-            await dronefly_config.user_id(interaction.user)
-        except LookupError:
-            await interaction.response.send_message(
-                content="You are not known here.", ephemeral=True
-            )
-            return False
-        return True
-
 
 class HomePlaceButton(discord.ui.Button):
     def __init__(
@@ -679,14 +666,22 @@ class TaxonMenu(DiscordBaseMenu, CoreTaxonMenu):
             "query_place",
             # "taxonomy",
         ]:
-            return bool(self.author_inat_user_id)
+            dronefly_config = self.dronefly_ctx.config
+            try:
+                await dronefly_config.user_id(interaction.user)
+            except LookupError:
+                await interaction.response.send_message(
+                    content="Your iNat account is not known here.", ephemeral=True
+                )
+                return False
+            return True
         elif interaction.user.id not in (
             *interaction.client.owner_ids,
             getattr(self.author, "id", None),
         ):
             # Other buttons can only be pressed by the owner:
             await interaction.response.send_message(
-                content="You are not authorized to interact with this.", ephemeral=True
+                content="Only the command owner can do this.", ephemeral=True
             )
             return False
         return True
