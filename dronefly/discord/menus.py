@@ -296,31 +296,26 @@ class QueryUserModal(discord.ui.Modal):
         self.add_item(self.user_label)
 
     async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.defer()
-        view = self.view
-        inat_client = view.inat_client
-        value = self.user_text.value
-        if value:
-            inat_user_id = None
-            dronefly_config = view.dronefly_ctx.config
-            inat_user_id = await dronefly_config.user_id(value)
-            if inat_user_id:
-                user = await inat_client.users.from_ids(inat_user_id).async_one()
-                await self.view.source.toggle_user_count(inat_client, user)
-                await self.view.show_page(interaction)
-
-    async def on_error(
-        self, interaction: discord.Interaction, error: Exception
-    ) -> None:
-        if type(error) in (HTTPError, LookupError):
-            await interaction.response.send_message(
-                content="User not found.", ephemeral=True
-            )
-            return
+        try:
+            view = self.view
+            inat_client = view.inat_client
+            value = self.user_text.value
+            if value:
+                inat_user_id = None
+                dronefly_config = view.dronefly_ctx.config
+                inat_user_id = await dronefly_config.user_id(value)
+                if inat_user_id:
+                    user = await inat_client.users.from_ids(inat_user_id).async_one()
+                    await self.view.source.toggle_user_count(inat_client, user)
+                    await self.view.show_page(interaction)
+                    return
+            else:
+                raise LookupError("No user")
+        except (HTTPError, LookupError):
+            pass
         await interaction.response.send_message(
-            content="Oops, something went wrong!", ephemeral=True
+            content="User not found.", ephemeral=True
         )
-        logging.error(str(error))
 
 
 class QueryUserButton(discord.ui.Button):
