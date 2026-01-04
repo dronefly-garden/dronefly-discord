@@ -1,3 +1,4 @@
+import logging
 from math import floor
 from typing import Any, Optional
 
@@ -13,8 +14,11 @@ from dronefly.core.menus import (
     ListPageSource,
 )
 from pyinaturalist import ROOT_TAXON_ID, Taxon
+from requests import HTTPError
 
 from .embeds import make_embed, make_taxa_embed
+
+logger = logging.getLogger(__name__)
 
 
 class TaxonListSource(CoreTaxonListSource):
@@ -279,6 +283,58 @@ class UserButton(discord.ui.Button):
         ).async_one()
         await self.view.source.toggle_user_count(inat_client, user)
         await self.view.show_page(interaction)
+
+
+class QueryUserModal(discord.ui.Modal):
+    def __init__(self, view=None):
+        super().__init__(title="Add or remove a user")
+        self.view = view
+        self.user_text = discord.ui.TextInput()
+        self.user_label = discord.ui.Label(
+            text="Enter a user to add or remove", component=self.user_text
+        )
+        self.add_item(self.user_label)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        view = self.view
+        inat_client = view.inat_client
+        value = self.user_text.value
+        if value:
+            inat_user_id = None
+            dronefly_config = view.dronefly_ctx.config
+            inat_user_id = await dronefly_config.user_id(value)
+            if inat_user_id:
+                user = await inat_client.users.from_ids(inat_user_id).async_one()
+                await self.view.source.toggle_user_count(inat_client, user)
+                await self.view.show_page(interaction)
+
+    async def on_error(
+        self, interaction: discord.Interaction, error: Exception
+    ) -> None:
+        if type(error) in (HTTPError, LookupError):
+            await interaction.response.send_message(
+                content="User not found.", ephemeral=True
+            )
+            return
+        await interaction.response.send_message(
+            content="Oops, something went wrong!", ephemeral=True
+        )
+        logging.error(str(error))
+
+
+class QueryUserButton(discord.ui.Button):
+    def __init__(
+        self,
+        style: discord.ButtonStyle,
+        row: Optional[int],
+    ):
+        super().__init__(style=style, row=row, custom_id="query_user")
+        self.style = style
+        self.emoji = "\N{BUSTS IN SILHOUETTE}"
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(QueryUserModal(view=self.view))
 
 
 class HomePlaceButton(discord.ui.Button):
@@ -612,9 +668,11 @@ class TaxonMenu(DiscordBaseMenu, CoreTaxonMenu):
         self.ctx = None
         self.author: Optional[discord.Member] = None
         self.user_button = UserButton(discord.ButtonStyle.grey, 0)
+        self.query_user_button = QueryUserButton(discord.ButtonStyle.grey, 0)
         self.taxonomy_button = TaxonomyButton(discord.ButtonStyle.grey, 0)
         self.stop_button = StopButton(discord.ButtonStyle.red, 0)
         self.add_item(self.user_button)
+        self.add_item(self.query_user_button)
         self.add_item(self.taxonomy_button)
         self.add_item(self.stop_button)
 
