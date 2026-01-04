@@ -260,6 +260,40 @@ class DiscordBaseMenu(discord.ui.View):
         )
 
 
+class UserButton(discord.ui.Button):
+    def __init__(
+        self,
+        style: discord.ButtonStyle,
+        row: Optional[int],
+    ):
+        super().__init__(style=style, row=row, custom_id="user")
+        self.style = style
+        self.emoji = "\N{BUST IN SILHOUETTE}"
+
+    async def callback(self, interaction: discord.Interaction):
+        view = self.view
+        inat_client = view.inat_client
+        await interaction.response.defer()
+        user = await (
+            await inat_client.users.from_dronefly_users([interaction.user])
+        ).async_one()
+        await self.view.source.toggle_user_count(inat_client, user)
+        await self.view.show_page(interaction)
+
+    async def interaction_check(self, interaction: discord.Interaction):
+        """Just extends the default reaction_check to check if owner is registered here."""
+        view = self.view
+        dronefly_config = view.dronefly_ctx.config
+        try:
+            await dronefly_config.user_id(interaction.user)
+        except LookupError:
+            await interaction.response.send_message(
+                content="You are not known here.", ephemeral=True
+            )
+            return False
+        return True
+
+
 class HomePlaceButton(discord.ui.Button):
     def __init__(
         self,
@@ -590,8 +624,10 @@ class TaxonMenu(DiscordBaseMenu, CoreTaxonMenu):
         self.message = message
         self.ctx = None
         self.author: Optional[discord.Member] = None
+        self.user_button = UserButton(discord.ButtonStyle.grey, 0)
         self.taxonomy_button = TaxonomyButton(discord.ButtonStyle.grey, 0)
         self.stop_button = StopButton(discord.ButtonStyle.red, 0)
+        self.add_item(self.user_button)
         self.add_item(self.taxonomy_button)
         self.add_item(self.stop_button)
 
