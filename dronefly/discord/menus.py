@@ -307,6 +307,7 @@ class QueryUserModal(discord.ui.Modal):
             dronefly_config = view.dronefly_ctx.config
 
             discord_user_values = self.discord_user.values
+            discord_user_value = None
             user_text_value = self.user_text.value
 
             if not (discord_user_values or user_text_value):
