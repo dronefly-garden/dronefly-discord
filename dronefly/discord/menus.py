@@ -289,33 +289,75 @@ class QueryUserModal(discord.ui.Modal):
     def __init__(self, view=None):
         super().__init__(title="Add or remove a user")
         self.view = view
-        self.user_text = discord.ui.TextInput()
-        self.user_label = discord.ui.Label(
-            text="Enter a user to add or remove", component=self.user_text
+        self.discord_user = discord.ui.UserSelect()
+        self.user_select_label = discord.ui.Label(
+            text="Select a member to add/remove", component=self.discord_user
         )
-        self.add_item(self.user_label)
+        self.user_text = discord.ui.TextInput(required=False)
+        self.user_text_label = discord.ui.Label(
+            text="Or type an iNat username", component=self.user_text
+        )
+        self.add_item(self.user_select_label)
+        self.add_item(self.user_text_label)
 
     async def on_submit(self, interaction: discord.Interaction):
         try:
             view = self.view
             inat_client = view.inat_client
-            value = self.user_text.value
-            if value:
-                inat_user_id = None
-                dronefly_config = view.dronefly_ctx.config
-                inat_user_id = await dronefly_config.user_id(value)
+            dronefly_config = view.dronefly_ctx.config
+
+            discord_user_values = self.discord_user.values
+            user_text_value = self.user_text.value
+
+            if not (discord_user_values or user_text_value):
+                await interaction.response.send_message(
+                    content="No member selected or iNat username typed.", ephemeral=True
+                )
+                return
+            elif discord_user_values and user_text_value:
+                await interaction.response.send_message(
+                    content="Choose only a member or iNat username, not both.",
+                    ephemeral=True,
+                )
+                return
+            user_for_member = None
+            user_for_text = None
+            inat_user_id = None
+            if discord_user_values:
+                discord_user_value = discord_user_values[0]
+                if not isinstance(discord_user_value, discord.Member):
+                    discord_user_value = await commands.MemberConverter().convert(
+                        self.view.ctx, discord_user_value
+                    )
+                inat_user_id = await dronefly_config.user_id(discord_user_value)
                 if inat_user_id:
-                    user = await inat_client.users.from_ids(inat_user_id).async_one()
-                    await self.view.source.toggle_user_count(inat_client, user)
-                    await self.view.show_page(interaction)
-                    return
-            else:
-                raise LookupError("No user")
+                    user_for_member = await inat_client.users.from_ids(
+                        inat_user_id
+                    ).async_one()
+                    if user_for_member:
+                        await view.source.toggle_user_count(
+                            inat_client, user_for_member
+                        )
+            if user_text_value:
+                inat_user_id = await dronefly_config.user_id(user_text_value)
+                if inat_user_id:
+                    user_for_text = await inat_client.users.from_ids(
+                        inat_user_id
+                    ).async_one()
+                    await view.source.toggle_user_count(inat_client, user_for_text)
         except (HTTPError, LookupError):
             pass
-        await interaction.response.send_message(
-            content="User not found.", ephemeral=True
-        )
+        if user_for_member or user_for_text:
+            await view.show_page(interaction)
+        elif discord_user_value:
+            await interaction.response.send_message(
+                content="iNat user not known for that member.", ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                content="iNat user not found.", ephemeral=True
+            )
+            return
 
 
 class QueryUserButton(discord.ui.Button):
