@@ -386,8 +386,22 @@ class HomePlaceButton(discord.ui.Button):
         self.emoji = "\N{HOUSE BUILDING}"
 
     async def callback(self, interaction: discord.Interaction):
-        # await self.view.show_checked_page(self.view.current_page + 1, interaction)
-        pass
+        view = self.view
+        inat_client = view.inat_client
+        dronefly_config = view.dronefly_ctx.config
+
+        await interaction.response.defer()
+        place_id = await dronefly_config.place_id("home", interaction.user)
+        place = None
+        if place_id:
+            place = await inat_client.places.from_ids(place_id).async_one()
+        if place:
+            await self.view.source.toggle_place_count(inat_client, place)
+            await self.view.show_page(interaction)
+        else:
+            await interaction.response.send_message(
+                "You have not set a home place", ephemeral=True
+            )
 
 
 class QueryPlaceButton(discord.ui.Button):
@@ -696,6 +710,7 @@ class TaxonMenu(DiscordBaseMenu, CoreTaxonMenu):
         inat_client: iNatClient,
         cog: commands.Cog,
         message: discord.Message = None,
+        for_place: bool = False,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -705,12 +720,18 @@ class TaxonMenu(DiscordBaseMenu, CoreTaxonMenu):
         self.message = message
         self.ctx = None
         self.author: Optional[discord.Member] = None
-        self.user_button = UserButton(discord.ButtonStyle.grey, 0)
-        self.query_user_button = QueryUserButton(discord.ButtonStyle.grey, 0)
         self.taxonomy_button = TaxonomyButton(discord.ButtonStyle.grey, 0)
         self.stop_button = StopButton(discord.ButtonStyle.red, 0)
-        self.add_item(self.user_button)
-        self.add_item(self.query_user_button)
+        if for_place:
+            self.home_place_button = HomePlaceButton(discord.ButtonStyle.grey, 0)
+            # self.query_place_button = QueryPlaceButton(discord.ButtonStyle.grey, 0)
+            self.add_item(self.home_place_button)
+            # self.add_item(self.query_place_button)
+        else:
+            self.user_button = UserButton(discord.ButtonStyle.grey, 0)
+            self.query_user_button = QueryUserButton(discord.ButtonStyle.grey, 0)
+            self.add_item(self.user_button)
+            self.add_item(self.query_user_button)
         self.add_item(self.taxonomy_button)
         self.add_item(self.stop_button)
 
