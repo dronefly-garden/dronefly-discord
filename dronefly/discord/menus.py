@@ -760,6 +760,7 @@ class TaxonMenu(DiscordBaseMenu, CoreTaxonMenu):
         message: discord.Message = None,
         for_place: bool = False,
         image_number: int = None,
+        related_embed: discord.Embed = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -770,6 +771,7 @@ class TaxonMenu(DiscordBaseMenu, CoreTaxonMenu):
         self.ctx = None
         self.author: Optional[discord.Member] = None
         self.image_number = image_number
+        self.related_embed = related_embed
         self.taxonomy_button = TaxonomyButton(discord.ButtonStyle.grey, 0)
         self.stop_button = StopButton(discord.ButtonStyle.red, 0)
         if for_place:
@@ -803,7 +805,11 @@ class TaxonMenu(DiscordBaseMenu, CoreTaxonMenu):
         elif isinstance(value, str):
             return {"content": value, "embed": None}
         elif isinstance(value, discord.Embed):
-            return {"embed": value, "content": None}
+            if self.related_embed:
+                embeds = [self.related_embed, value]
+            else:
+                embeds = [value]
+            return {"embeds": embeds, "content": None}
 
     async def send_initial_message(self, ctx: commands.Context):
         """|coro|
