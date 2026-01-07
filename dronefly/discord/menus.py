@@ -404,6 +404,47 @@ class HomePlaceButton(discord.ui.Button):
             )
 
 
+class QueryPlaceModal(discord.ui.Modal):
+    def __init__(self, view=None):
+        super().__init__(title="Add or remove a place")
+        self.view = view
+        self.place_text = discord.ui.TextInput(required=True)
+        self.place_text_label = discord.ui.Label(
+            text="Type an iNat place or abbreviation", component=self.place_text
+        )
+        self.add_item(self.place_text_label)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            view = self.view
+            inat_client = view.inat_client
+            dronefly_config = view.dronefly_ctx.config
+
+            place_text_value = self.place_text.value
+
+            if place_text_value:
+                inat_place_id = await dronefly_config.place_id(place_text_value)
+                if inat_place_id:
+                    place_for_text = await inat_client.places.from_ids(
+                        inat_place_id
+                    ).async_one()
+                else:
+                    places_for_text = await inat_client.places.autocomplete(
+                        q=place_text_value, limit=1
+                    ).async_all()
+                    if places_for_text:
+                        place_for_text = places_for_text[0]
+                if place_for_text:
+                    await view.source.toggle_place_count(inat_client, place_for_text)
+                    await view.show_page(interaction)
+                    return
+        except (HTTPError, LookupError):
+            pass
+        await interaction.response.send_message(
+            content="iNat place not found.", ephemeral=True
+        )
+
+
 class QueryPlaceButton(discord.ui.Button):
     def __init__(
         self,
@@ -415,8 +456,7 @@ class QueryPlaceButton(discord.ui.Button):
         self.emoji = "\N{EARTH GLOBE EUROPE-AFRICA}"
 
     async def callback(self, interaction: discord.Interaction):
-        # await self.view.show_checked_page(self.view.current_page + 1, interaction)
-        pass
+        await interaction.response.send_modal(QueryPlaceModal(view=self.view))
 
 
 class TaxonomyButton(discord.ui.Button):
@@ -724,9 +764,9 @@ class TaxonMenu(DiscordBaseMenu, CoreTaxonMenu):
         self.stop_button = StopButton(discord.ButtonStyle.red, 0)
         if for_place:
             self.home_place_button = HomePlaceButton(discord.ButtonStyle.grey, 0)
-            # self.query_place_button = QueryPlaceButton(discord.ButtonStyle.grey, 0)
+            self.query_place_button = QueryPlaceButton(discord.ButtonStyle.grey, 0)
             self.add_item(self.home_place_button)
-            # self.add_item(self.query_place_button)
+            self.add_item(self.query_place_button)
         else:
             self.user_button = UserButton(discord.ButtonStyle.grey, 0)
             self.query_user_button = QueryUserButton(discord.ButtonStyle.grey, 0)
