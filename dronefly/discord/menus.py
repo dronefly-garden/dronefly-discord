@@ -16,7 +16,7 @@ from dronefly.core.menus import (
 from pyinaturalist import ROOT_TAXON_ID, Taxon
 from requests import HTTPError
 
-from .embeds import make_embed, make_taxa_embed
+from .embeds import make_embed, make_image_embed, make_taxa_embed
 
 logger = logging.getLogger(__name__)
 
@@ -734,13 +734,21 @@ class TaxonListMenu(DiscordBaseMenu, CoreBaseMenu):
 
 class TaxonSource(CoreTaxonSource):
     def format_page(self):
-        embed = make_taxa_embed(
-            taxon=self.query_response.taxon,
-            formatter=self.formatter,
-            description=self.formatter.format(
-                with_title=False, with_ancestors=self.with_ancestors
-            ),
-        )
+        # TODO: migrate photo concerns into taxon source & formatter:
+        if self.formatter.image_number is None:
+            embed = make_taxa_embed(
+                taxon=self.query_response.taxon,
+                formatter=self.formatter,
+                description=self.formatter.format(
+                    with_title=False, with_ancestors=self.with_ancestors
+                ),
+            )
+        else:
+            embed = make_image_embed(
+                taxon=self.query_response.taxon,
+                formatter=self.formatter,
+                index=self.formatter.image_number,
+            )
         return embed
 
 
@@ -751,6 +759,7 @@ class TaxonMenu(DiscordBaseMenu, CoreTaxonMenu):
         cog: commands.Cog,
         message: discord.Message = None,
         for_place: bool = False,
+        image_number: int = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -760,6 +769,7 @@ class TaxonMenu(DiscordBaseMenu, CoreTaxonMenu):
         self.message = message
         self.ctx = None
         self.author: Optional[discord.Member] = None
+        self.image_number = image_number
         self.taxonomy_button = TaxonomyButton(discord.ButtonStyle.grey, 0)
         self.stop_button = StopButton(discord.ButtonStyle.red, 0)
         if for_place:
@@ -772,7 +782,8 @@ class TaxonMenu(DiscordBaseMenu, CoreTaxonMenu):
             self.query_user_button = QueryUserButton(discord.ButtonStyle.grey, 0)
             self.add_item(self.user_button)
             self.add_item(self.query_user_button)
-        self.add_item(self.taxonomy_button)
+        if self.source.formatter.image_number is None:
+            self.add_item(self.taxonomy_button)
         self.add_item(self.stop_button)
 
     async def on_timeout(self):

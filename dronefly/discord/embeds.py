@@ -80,10 +80,8 @@ def make_taxa_embed(taxon: Taxon, formatter: TaxonFormatter, description: str):
     return embed
 
 
-def make_image_embed(taxon: Taxon, index, lang: str):
-    formatter = TaxonFormatter(taxon, lang=lang, with_url=False)
-    title = formatter.format_title()
-
+# TODO: migrate into lower level classes
+def get_taxon_photo(taxon, index):
     taxon_photo = None
     if (
         index == 1
@@ -93,21 +91,30 @@ def make_image_embed(taxon: Taxon, index, lang: str):
         taxon_photo = taxon.default_photo
     elif index >= 1 and index <= len(taxon.taxon_photos):
         taxon_photo = taxon.taxon_photos[index - 1]
-
-    embed = make_embed(url=f"{WWW_BASE_URL}/taxa/{taxon.id}")
-    embed.title = title
-
+    description = ""
     if taxon_photo:
-        embed.set_image(url=taxon_photo.original_url)
-        embed.set_footer(text=taxon_photo.attribution)
-        embed.description = f"Photo {index} of {len(taxon.taxon_photos)}"
+        description = f"Photo {index} of {len(taxon.taxon_photos)}"
     else:
         if index == 1:
-            embed.description = "This taxon has no default photo."
+            description = "This taxon has no default photo."
         else:
             count = len(taxon.taxon_photos)
-            embed.description = (
+            description = (
                 f"Photo number {index} not found.\n"
                 f"Taxon has {count} {p.plural('photo', count)}."
             )
+    return (taxon_photo, description)
+
+
+def make_image_embed(taxon: Taxon, formatter: TaxonFormatter, index: int = 1):
+    title = formatter.format_title()
+
+    (taxon_photo, description) = get_taxon_photo(taxon, index)
+    formatter.image_description = description
+    embed = make_embed(url=f"{WWW_BASE_URL}/taxa/{taxon.id}")
+    embed.title = title
+    if taxon_photo:
+        embed.set_image(url=taxon_photo.original_url)
+        embed.set_footer(text=taxon_photo.attribution)
+    embed.description = formatter.format()
     return embed
