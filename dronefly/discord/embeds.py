@@ -7,6 +7,7 @@ from pyinaturalist.models import IconPhoto, Taxon
 from dronefly.core import formatters
 from dronefly.core.formatters.constants import WWW_BASE_URL
 from dronefly.core.formatters.generic import (
+    CountFormatter,
     format_taxon_names,
     TaxonFormatter,
 )
@@ -60,6 +61,16 @@ def format_items_for_embed(function, max_len=MAX_EMBED_NAME_LEN):
 def format_taxon_names_for_embed(*args, **kwargs):
     """Format taxon names for output in embed."""
     return format_taxon_names(*args, **kwargs)
+
+
+def make_count_embed(formatter: CountFormatter, description: str):
+    """Make a count embed."""
+    embed = make_embed(
+        url=f"{formatter.source.url}",
+        title=f"Observations {formatter.source.query_response.obs_query_description()}",
+        description=description,
+    )
+    return embed
 
 
 def make_embed(**kwargs):

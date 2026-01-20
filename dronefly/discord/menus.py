@@ -8,15 +8,16 @@ from dronefly.core.clients.inat import iNatClient
 from dronefly.core.formatters import TaxonListFormatter
 from dronefly.core.menus import (
     BaseMenu as CoreBaseMenu,
+    CountMenu as CoreCountMenu,
+    CountSource as CoreCountSource,
     TaxonMenu as CoreTaxonMenu,
     TaxonListSource as CoreTaxonListSource,
     TaxonSource as CoreTaxonSource,
-    ListPageSource,
 )
 from pyinaturalist import ROOT_TAXON_ID, Taxon
 from requests import HTTPError
 
-from .embeds import make_embed, make_image_embed, make_taxa_embed
+from .embeds import make_count_embed, make_embed, make_image_embed, make_taxa_embed
 
 logger = logging.getLogger(__name__)
 
@@ -254,11 +255,9 @@ class SelectTaxonListTaxon(discord.ui.Select):
 class DiscordBaseMenu(discord.ui.View):
     def __init__(
         self,
-        source: ListPageSource,
         timeout: int = 60,
         **kwargs: Any,
     ) -> None:
-        self._source = source
         super().__init__(
             timeout=timeout,
         )
@@ -732,6 +731,123 @@ class TaxonListMenu(DiscordBaseMenu, CoreBaseMenu):
         await self.show_page(page, interaction, selected)
 
 
+class CountSource(CoreCountSource):
+    def format_page(self):
+        embed = make_count_embed(
+            formatter=self.formatter,
+            description=self.formatter.format(),
+        )
+        return embed
+
+
+class CountMenu(DiscordBaseMenu, CoreCountMenu):
+    ctx: commands.Context = None
+    author: discord.Member = None
+    message: discord.Message = None
+    home_place_button: discord.Button = None
+    query_place_button: discord.Button = None
+    user_button: discord.Button = None
+    query_user_button: discord.Button = None
+
+    def __init__(
+        self,
+        cog: commands.Cog,
+        inat_client: iNatClient,
+        source: CountSource,
+        for_place: bool = None,
+        **kwargs: Any,
+    ) -> None:
+        self.cog = cog
+        self.bot = self.cog.bot
+        self.inat_client = inat_client
+        self.source = source
+        self.for_place = for_place
+        if for_place:
+            self.home_place_button = HomePlaceButton(discord.ButtonStyle.grey, 0)
+            self.query_place_button = QueryPlaceButton(discord.ButtonStyle.grey, 0)
+        else:
+            self.user_button = UserButton(discord.ButtonStyle.grey, 0)
+            self.query_user_button = QueryUserButton(discord.ButtonStyle.grey, 0)
+        super().__init__(**kwargs)
+
+    async def on_timeout(self):
+        await self.message.edit(view=None)
+
+    async def start(self, ctx: commands.Context):
+        self.ctx = ctx
+        self.author = ctx.author
+        # await self.source._prepare_once()
+        # Place or user social buttons
+        if self.for_place:
+            self.add_item(self.home_place_button)
+            self.add_item(self.query_place_button)
+        else:
+            self.add_item(self.user_button)
+            self.add_item(self.query_user_button)
+        # Owner-only button to cancel the menu
+        self.stop_button = StopButton(discord.ButtonStyle.red, 0)
+        self.add_item(self.stop_button)
+        self.message = await self.send_initial_message(ctx)
+
+    async def _get_kwargs_from_page(self):
+        value = await discord.utils.maybe_coroutine(self.source.format_page)
+        if isinstance(value, dict):
+            return value
+        elif isinstance(value, str):
+            return {"content": value, "embed": None}
+        elif isinstance(value, discord.Embed):
+            return {"embed": value, "content": None}
+
+    async def send_initial_message(self, ctx: commands.Context):
+        """|coro|
+        The default implementation of :meth:`Menu.send_initial_message`
+        for the interactive pagination session.
+        This implementation shows the first page of the source.
+        """
+        self.ctx = ctx
+        kwargs = await self._get_kwargs_from_page()
+        self.message = await ctx.send(**kwargs, view=self)
+        return self.message
+
+    async def show_page(self, interaction: discord.Interaction):
+        self.current_page = 0
+        kwargs = await self._get_kwargs_from_page()
+        if interaction.response.is_done():
+            await interaction.edit_original_response(**kwargs, view=self)
+        else:
+            await interaction.response.edit_message(**kwargs, view=self)
+
+    async def interaction_check(self, interaction: discord.Interaction):
+        """Allow owner and known iNat user interactions."""
+        # Only some buttons can be pressed by known users:
+        if interaction.data.get("custom_id") in [
+            "user",
+            "query_user",
+            "home_place",
+            "query_place",
+            # "taxonomy",
+        ]:
+            dronefly_config = self.dronefly_ctx.config
+            try:
+                await dronefly_config.user_id(interaction.user)
+            except LookupError:
+                await interaction.response.send_message(
+                    content="Your iNat account is not known here.", ephemeral=True
+                )
+                return False
+            return True
+        elif interaction.user.id not in (
+            *interaction.client.owner_ids,
+            getattr(self.author, "id", None),
+        ):
+            # Other buttons can only be pressed by the owner:
+            await interaction.response.send_message(
+                content="Only the command owner can do this.", ephemeral=True
+            )
+            return False
+        return True
+
+
 class TaxonSource(CoreTaxonSource):
     def format_page(self):
         # TODO: migrate photo concerns into taxon source & formatter:
@@ -753,9 +869,18 @@ class TaxonSource(CoreTaxonSource):
 
 
 class TaxonMenu(DiscordBaseMenu, CoreTaxonMenu):
+    ctx: commands.Context = None
+    author: discord.Member = None
+    message: discord.Message = None
+    home_place_button: discord.Button = None
+    query_place_button: discord.Button = None
+    user_button: discord.Button = None
+    query_user_button: discord.Button = None
+
     def __init__(
         self,
         inat_client: iNatClient,
+        source: TaxonSource,
         cog: commands.Cog,
         message: discord.Message = None,
         for_place: bool = False,
@@ -765,6 +890,7 @@ class TaxonMenu(DiscordBaseMenu, CoreTaxonMenu):
     ) -> None:
         super().__init__(**kwargs)
         self.inat_client = inat_client
+        self.source = source
         self.cog = cog
         self.bot = None
         self.message = message
@@ -774,19 +900,13 @@ class TaxonMenu(DiscordBaseMenu, CoreTaxonMenu):
         self.related_embed = related_embed
         self.taxonomy_button = TaxonomyButton(discord.ButtonStyle.grey, 0)
         self.stop_button = StopButton(discord.ButtonStyle.red, 0)
-        if for_place:
+        self.for_place = for_place
+        if self.for_place:
             self.home_place_button = HomePlaceButton(discord.ButtonStyle.grey, 0)
             self.query_place_button = QueryPlaceButton(discord.ButtonStyle.grey, 0)
-            self.add_item(self.home_place_button)
-            self.add_item(self.query_place_button)
         else:
             self.user_button = UserButton(discord.ButtonStyle.grey, 0)
             self.query_user_button = QueryUserButton(discord.ButtonStyle.grey, 0)
-            self.add_item(self.user_button)
-            self.add_item(self.query_user_button)
-        if self.source.formatter.image_number is None:
-            self.add_item(self.taxonomy_button)
-        self.add_item(self.stop_button)
 
     async def on_timeout(self):
         await self.message.edit(view=None)
@@ -796,10 +916,19 @@ class TaxonMenu(DiscordBaseMenu, CoreTaxonMenu):
         self.bot = self.cog.bot
         self.author = ctx.author
         # await self.source._prepare_once()
+        if self.for_place:
+            self.add_item(self.home_place_button)
+            self.add_item(self.query_place_button)
+        else:
+            self.add_item(self.user_button)
+            self.add_item(self.query_user_button)
+        if self.source.formatter.image_number is None:
+            self.add_item(self.taxonomy_button)
+        self.add_item(self.stop_button)
         self.message = await self.send_initial_message(ctx)
 
     async def _get_kwargs_from_page(self):
-        value = await discord.utils.maybe_coroutine(self._source.format_page)
+        value = await discord.utils.maybe_coroutine(self.source.format_page)
         if isinstance(value, dict):
             return value
         elif isinstance(value, str):
