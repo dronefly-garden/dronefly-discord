@@ -7,10 +7,10 @@ from discord.ext import commands
 from dronefly.core.clients.inat import iNatClient
 from dronefly.core.formatters import TaxonListFormatter
 from dronefly.core.menus import (
-    BaseMenu as CoreBaseMenu,
     CountMenu as CoreCountMenu,
     CountSource as CoreCountSource,
     TaxonMenu as CoreTaxonMenu,
+    TaxonListMenu as CoreTaxonListMenu,
     TaxonListSource as CoreTaxonListSource,
     TaxonSource as CoreTaxonSource,
 )
@@ -95,7 +95,7 @@ class LastItemButton(discord.ui.Button):
         self.emoji = "\N{BLACK RIGHT-POINTING DOUBLE TRIANGLE WITH VERTICAL BAR}\N{VARIATION SELECTOR-16}"  # noqa: E501
 
     async def callback(self, interaction: discord.Interaction):
-        await self.view.show_page(self.view._source.get_max_pages() - 1, interaction)
+        await self.view.show_page(self.view.source.get_max_pages() - 1, interaction)
 
 
 class FirstItemButton(discord.ui.Button):
@@ -474,14 +474,16 @@ class TaxonomyButton(discord.ui.Button):
         await self.view.show_page(interaction)
 
 
-class TaxonListMenu(DiscordBaseMenu, CoreBaseMenu):
+class TaxonListMenu(DiscordBaseMenu, CoreTaxonListMenu):
     def __init__(
         self,
+        source: TaxonListSource,
         cog: commands.Cog,
         message: discord.Message = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
+        self.source = source
         self.cog = cog
         self.bot = None
         self.message = message
@@ -506,10 +508,6 @@ class TaxonListMenu(DiscordBaseMenu, CoreBaseMenu):
         self.add_item(self.back_button)
         self.add_item(self.forward_button)
         self.add_item(self.last_item)
-
-    @property
-    def source(self):
-        return self._source
 
     async def on_timeout(self):
         await self.message.edit(view=None)
@@ -543,7 +541,7 @@ class TaxonListMenu(DiscordBaseMenu, CoreBaseMenu):
         This implementation shows the first page of the source.
         """
         self.ctx = ctx
-        page = await self._source.get_page(self.current_page)
+        page = await self.source.get_page(self.current_page)
         kwargs = await self._get_kwargs_from_page(page)
         if getattr(page[0], "descendant_obs_count", None):
             # Source modifier buttons for life list:
@@ -555,7 +553,7 @@ class TaxonListMenu(DiscordBaseMenu, CoreBaseMenu):
             self.add_item(self.per_rank_button)
             self.add_item(self.root_button)
             self.add_item(self.direct_button)
-            if self._source.query_response.user:
+            if self.source.query_response.user:
                 self.common_button = CommonButton(discord.ButtonStyle.grey, 1)
                 self.add_item(self.common_button)
         self.select_taxon = SelectTaxonListTaxon(view=self, page=page, selected=0)
@@ -566,7 +564,7 @@ class TaxonListMenu(DiscordBaseMenu, CoreBaseMenu):
     async def show_page(
         self, page_number: int, interaction: discord.Interaction, selected: int = 0
     ):
-        page = await self._source.get_page(page_number)
+        page = await self.source.get_page(page_number)
         self.current_page = page_number
         self.ctx.selected = selected
         kwargs = await self._get_kwargs_from_page(page)
@@ -579,7 +577,7 @@ class TaxonListMenu(DiscordBaseMenu, CoreBaseMenu):
     async def show_checked_page(
         self, page_number: int, interaction: discord.Interaction
     ) -> None:
-        max_pages = self._source.get_max_pages()
+        max_pages = self.source.get_max_pages()
         try:
             if max_pages is None:
                 # If it doesn't give maximum pages, it cannot be checked
@@ -684,7 +682,7 @@ class TaxonListMenu(DiscordBaseMenu, CoreBaseMenu):
         )
         self._taxon_list_formatter = formatter
         # Replace the source
-        self._source = self._source.__class__(
+        self.source = self.source.__class__(
             taxon_list,
             query_response,
             formatter,
