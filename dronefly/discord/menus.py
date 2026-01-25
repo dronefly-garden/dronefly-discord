@@ -1,14 +1,25 @@
+import logging
 from math import floor
 from typing import Any, Optional
 
 import discord
 from discord.ext import commands
-from dronefly.core.menus import BaseMenu as CoreBaseMenu
-from dronefly.core.formatters import TaxonFormatter, TaxonListFormatter
-from dronefly.core.menus import TaxonListSource as CoreTaxonListSource, ListPageSource
+from dronefly.core.clients.inat import iNatClient
+from dronefly.core.formatters import TaxonListFormatter
+from dronefly.core.menus import (
+    CountMenu as CoreCountMenu,
+    CountSource as CoreCountSource,
+    TaxonMenu as CoreTaxonMenu,
+    TaxonListMenu as CoreTaxonListMenu,
+    TaxonListSource as CoreTaxonListSource,
+    TaxonSource as CoreTaxonSource,
+)
 from pyinaturalist import ROOT_TAXON_ID, Taxon
+from requests import HTTPError
 
-from .embeds import make_embed
+from .embeds import make_count_embed, make_embed, make_image_embed, make_taxa_embed
+
+logger = logging.getLogger(__name__)
 
 
 class TaxonListSource(CoreTaxonListSource):
@@ -84,7 +95,7 @@ class LastItemButton(discord.ui.Button):
         self.emoji = "\N{BLACK RIGHT-POINTING DOUBLE TRIANGLE WITH VERTICAL BAR}\N{VARIATION SELECTOR-16}"  # noqa: E501
 
     async def callback(self, interaction: discord.Interaction):
-        await self.view.show_page(self.view._source.get_max_pages() - 1, interaction)
+        await self.view.show_page(self.view.source.get_max_pages() - 1, interaction)
 
 
 class FirstItemButton(discord.ui.Button):
@@ -244,11 +255,9 @@ class SelectTaxonListTaxon(discord.ui.Select):
 class DiscordBaseMenu(discord.ui.View):
     def __init__(
         self,
-        source: ListPageSource,
         timeout: int = 60,
         **kwargs: Any,
     ) -> None:
-        self._source = source
         super().__init__(
             timeout=timeout,
         )
@@ -265,8 +274,90 @@ class UserButton(discord.ui.Button):
         self.emoji = "\N{BUST IN SILHOUETTE}"
 
     async def callback(self, interaction: discord.Interaction):
-        # await self.view.show_checked_page(self.view.current_page + 1, interaction)
-        pass
+        view = self.view
+        inat_client = view.inat_client
+        await interaction.response.defer()
+        user = await (
+            await inat_client.users.from_dronefly_users([interaction.user])
+        ).async_one()
+        await self.view.source.toggle_user_count(inat_client, user)
+        await self.view.show_page(interaction)
+
+
+class QueryUserModal(discord.ui.Modal):
+    def __init__(self, view=None):
+        super().__init__(title="Add or remove a user")
+        self.view = view
+        self.discord_user = discord.ui.UserSelect()
+        self.user_select_label = discord.ui.Label(
+            text="Select a member to add/remove", component=self.discord_user
+        )
+        self.user_text = discord.ui.TextInput(required=False)
+        self.user_text_label = discord.ui.Label(
+            text="Or type an iNat username", component=self.user_text
+        )
+        self.add_item(self.user_select_label)
+        self.add_item(self.user_text_label)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            view = self.view
+            inat_client = view.inat_client
+            dronefly_config = view.dronefly_ctx.config
+
+            discord_user_values = self.discord_user.values
+            discord_user_value = None
+            user_text_value = self.user_text.value
+
+            if not (discord_user_values or user_text_value):
+                await interaction.response.send_message(
+                    content="No member selected or iNat username typed.", ephemeral=True
+                )
+                return
+            elif discord_user_values and user_text_value:
+                await interaction.response.send_message(
+                    content="Choose only a member or iNat username, not both.",
+                    ephemeral=True,
+                )
+                return
+            user_for_member = None
+            user_for_text = None
+            inat_user_id = None
+            if discord_user_values:
+                discord_user_value = discord_user_values[0]
+                if not isinstance(discord_user_value, discord.Member):
+                    discord_user_value = await commands.MemberConverter().convert(
+                        self.view.ctx, discord_user_value
+                    )
+                inat_user_id = await dronefly_config.user_id(discord_user_value)
+                if inat_user_id:
+                    user_for_member = await inat_client.users.from_ids(
+                        inat_user_id
+                    ).async_one()
+                    if user_for_member:
+                        await view.source.toggle_user_count(
+                            inat_client, user_for_member
+                        )
+            if user_text_value:
+                inat_user_id = await dronefly_config.user_id(user_text_value)
+                if inat_user_id:
+                    user_for_text = await inat_client.users.from_ids(
+                        inat_user_id
+                    ).async_one()
+                    await view.source.toggle_user_count(inat_client, user_for_text)
+        except (HTTPError, LookupError):
+            pass
+        if user_for_member or user_for_text:
+            await view.show_page(interaction)
+        elif discord_user_value:
+            await interaction.response.send_message(
+                content="iNat user not known for that member.", ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                content="iNat user not found.", ephemeral=True
+            )
+            return
 
 
 class QueryUserButton(discord.ui.Button):
@@ -280,8 +371,7 @@ class QueryUserButton(discord.ui.Button):
         self.emoji = "\N{BUSTS IN SILHOUETTE}"
 
     async def callback(self, interaction: discord.Interaction):
-        # await self.view.show_checked_page(self.view.current_page + 1, interaction)
-        pass
+        await interaction.response.send_modal(QueryUserModal(view=self.view))
 
 
 class HomePlaceButton(discord.ui.Button):
@@ -295,8 +385,63 @@ class HomePlaceButton(discord.ui.Button):
         self.emoji = "\N{HOUSE BUILDING}"
 
     async def callback(self, interaction: discord.Interaction):
-        # await self.view.show_checked_page(self.view.current_page + 1, interaction)
-        pass
+        view = self.view
+        inat_client = view.inat_client
+        dronefly_config = view.dronefly_ctx.config
+
+        await interaction.response.defer()
+        place_id = await dronefly_config.place_id("home", interaction.user)
+        place = None
+        if place_id:
+            place = await inat_client.places.from_ids(place_id).async_one()
+        if place:
+            await self.view.source.toggle_place_count(inat_client, place)
+            await self.view.show_page(interaction)
+        else:
+            await interaction.response.send_message(
+                "You have not set a home place", ephemeral=True
+            )
+
+
+class QueryPlaceModal(discord.ui.Modal):
+    def __init__(self, view=None):
+        super().__init__(title="Add or remove a place")
+        self.view = view
+        self.place_text = discord.ui.TextInput(required=True)
+        self.place_text_label = discord.ui.Label(
+            text="Type an iNat place or abbreviation", component=self.place_text
+        )
+        self.add_item(self.place_text_label)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            view = self.view
+            inat_client = view.inat_client
+            dronefly_config = view.dronefly_ctx.config
+
+            place_text_value = self.place_text.value
+
+            if place_text_value:
+                inat_place_id = await dronefly_config.place_id(place_text_value)
+                if inat_place_id:
+                    place_for_text = await inat_client.places.from_ids(
+                        inat_place_id
+                    ).async_one()
+                else:
+                    places_for_text = await inat_client.places.autocomplete(
+                        q=place_text_value, limit=1
+                    ).async_all()
+                    if places_for_text:
+                        place_for_text = places_for_text[0]
+                if place_for_text:
+                    await view.source.toggle_place_count(inat_client, place_for_text)
+                    await view.show_page(interaction)
+                    return
+        except (HTTPError, LookupError):
+            pass
+        await interaction.response.send_message(
+            content="iNat place not found.", ephemeral=True
+        )
 
 
 class QueryPlaceButton(discord.ui.Button):
@@ -310,8 +455,7 @@ class QueryPlaceButton(discord.ui.Button):
         self.emoji = "\N{EARTH GLOBE EUROPE-AFRICA}"
 
     async def callback(self, interaction: discord.Interaction):
-        # await self.view.show_checked_page(self.view.current_page + 1, interaction)
-        pass
+        await interaction.response.send_modal(QueryPlaceModal(view=self.view))
 
 
 class TaxonomyButton(discord.ui.Button):
@@ -330,14 +474,16 @@ class TaxonomyButton(discord.ui.Button):
         await self.view.show_page(interaction)
 
 
-class TaxonListMenu(DiscordBaseMenu, CoreBaseMenu):
+class TaxonListMenu(DiscordBaseMenu, CoreTaxonListMenu):
     def __init__(
         self,
+        source: TaxonListSource,
         cog: commands.Cog,
         message: discord.Message = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
+        self.source = source
         self.cog = cog
         self.bot = None
         self.message = message
@@ -362,10 +508,6 @@ class TaxonListMenu(DiscordBaseMenu, CoreBaseMenu):
         self.add_item(self.back_button)
         self.add_item(self.forward_button)
         self.add_item(self.last_item)
-
-    @property
-    def source(self):
-        return self._source
 
     async def on_timeout(self):
         await self.message.edit(view=None)
@@ -399,7 +541,7 @@ class TaxonListMenu(DiscordBaseMenu, CoreBaseMenu):
         This implementation shows the first page of the source.
         """
         self.ctx = ctx
-        page = await self._source.get_page(self.current_page)
+        page = await self.source.get_page(self.current_page)
         kwargs = await self._get_kwargs_from_page(page)
         if getattr(page[0], "descendant_obs_count", None):
             # Source modifier buttons for life list:
@@ -411,7 +553,7 @@ class TaxonListMenu(DiscordBaseMenu, CoreBaseMenu):
             self.add_item(self.per_rank_button)
             self.add_item(self.root_button)
             self.add_item(self.direct_button)
-            if self._source.query_response.user:
+            if self.source.query_response.user:
                 self.common_button = CommonButton(discord.ButtonStyle.grey, 1)
                 self.add_item(self.common_button)
         self.select_taxon = SelectTaxonListTaxon(view=self, page=page, selected=0)
@@ -422,7 +564,7 @@ class TaxonListMenu(DiscordBaseMenu, CoreBaseMenu):
     async def show_page(
         self, page_number: int, interaction: discord.Interaction, selected: int = 0
     ):
-        page = await self._source.get_page(page_number)
+        page = await self.source.get_page(page_number)
         self.current_page = page_number
         self.ctx.selected = selected
         kwargs = await self._get_kwargs_from_page(page)
@@ -435,7 +577,7 @@ class TaxonListMenu(DiscordBaseMenu, CoreBaseMenu):
     async def show_checked_page(
         self, page_number: int, interaction: discord.Interaction
     ) -> None:
-        max_pages = self._source.get_max_pages()
+        max_pages = self.source.get_max_pages()
         try:
             if max_pages is None:
                 # If it doesn't give maximum pages, it cannot be checked
@@ -540,7 +682,7 @@ class TaxonListMenu(DiscordBaseMenu, CoreBaseMenu):
         )
         self._taxon_list_formatter = formatter
         # Replace the source
-        self._source = self._source.__class__(
+        self.source = self.source.__class__(
             taxon_list,
             query_response,
             formatter,
@@ -587,44 +729,66 @@ class TaxonListMenu(DiscordBaseMenu, CoreBaseMenu):
         await self.show_page(page, interaction, selected)
 
 
-class TaxonMenu(DiscordBaseMenu, CoreBaseMenu):
+class CountSource(CoreCountSource):
+    def format_page(self):
+        embed = make_count_embed(
+            formatter=self.formatter,
+            description=self.formatter.format(),
+        )
+        return embed
+
+
+class CountMenu(DiscordBaseMenu, CoreCountMenu):
+    ctx: commands.Context = None
+    author: discord.Member = None
+    message: discord.Message = None
+    home_place_button: discord.Button = None
+    query_place_button: discord.Button = None
+    user_button: discord.Button = None
+    query_user_button: discord.Button = None
+
     def __init__(
         self,
         cog: commands.Cog,
-        message: discord.Message = None,
+        inat_client: iNatClient,
+        source: CountSource,
+        for_place: bool = None,
         **kwargs: Any,
     ) -> None:
-        super().__init__(**kwargs)
         self.cog = cog
-        self.bot = None
-        self.message = message
-        self.ctx = None
-        self.author: Optional[discord.Member] = None
-        self.user_button = UserButton(discord.ButtonStyle.grey, 0)
-        self.query_user_button = QueryUserButton(discord.ButtonStyle.grey, 0)
-        self.taxonomy_button = TaxonomyButton(discord.ButtonStyle.grey, 0)
-        self.stop_button = StopButton(discord.ButtonStyle.red, 0)
-        self.add_item(self.user_button)
-        self.add_item(self.query_user_button)
-        self.add_item(self.taxonomy_button)
-        self.add_item(self.stop_button)
-
-    @property
-    def source(self):
-        return self._source
+        self.bot = self.cog.bot
+        self.inat_client = inat_client
+        self.source = source
+        self.for_place = for_place
+        if for_place:
+            self.home_place_button = HomePlaceButton(discord.ButtonStyle.grey, 0)
+            self.query_place_button = QueryPlaceButton(discord.ButtonStyle.grey, 0)
+        else:
+            self.user_button = UserButton(discord.ButtonStyle.grey, 0)
+            self.query_user_button = QueryUserButton(discord.ButtonStyle.grey, 0)
+        super().__init__(**kwargs)
 
     async def on_timeout(self):
         await self.message.edit(view=None)
 
     async def start(self, ctx: commands.Context):
         self.ctx = ctx
-        self.bot = self.cog.bot
         self.author = ctx.author
         # await self.source._prepare_once()
+        # Place or user social buttons
+        if self.for_place:
+            self.add_item(self.home_place_button)
+            self.add_item(self.query_place_button)
+        else:
+            self.add_item(self.user_button)
+            self.add_item(self.query_user_button)
+        # Owner-only button to cancel the menu
+        self.stop_button = StopButton(discord.ButtonStyle.red, 0)
+        self.add_item(self.stop_button)
         self.message = await self.send_initial_message(ctx)
 
     async def _get_kwargs_from_page(self):
-        value = await discord.utils.maybe_coroutine(self._source.format_page)
+        value = await discord.utils.maybe_coroutine(self.source.format_page)
         if isinstance(value, dict):
             return value
         elif isinstance(value, str):
@@ -659,20 +823,166 @@ class TaxonMenu(DiscordBaseMenu, CoreBaseMenu):
             "query_user",
             "home_place",
             "query_place",
-            "taxonomy",
+            # "taxonomy",
         ]:
-            return bool(self.ctx.inat_client.ctx.author.inat_user_id)
+            dronefly_config = self.dronefly_ctx.config
+            try:
+                await dronefly_config.user_id(interaction.user)
+            except LookupError:
+                await interaction.response.send_message(
+                    content="Your iNat account is not known here.", ephemeral=True
+                )
+                return False
+            return True
         elif interaction.user.id not in (
             *interaction.client.owner_ids,
             getattr(self.author, "id", None),
         ):
             # Other buttons can only be pressed by the owner:
             await interaction.response.send_message(
-                content="You are not authorized to interact with this.", ephemeral=True
+                content="Only the command owner can do this.", ephemeral=True
             )
             return False
         return True
 
-    @property
-    def formatter(self) -> TaxonFormatter:
-        return self.source.formatter
+
+class TaxonSource(CoreTaxonSource):
+    def format_page(self):
+        # TODO: migrate photo concerns into taxon source & formatter:
+        if self.formatter.image_number is None:
+            embed = make_taxa_embed(
+                taxon=self.query_response.taxon,
+                formatter=self.formatter,
+                description=self.formatter.format(
+                    with_title=False, with_ancestors=self.with_ancestors
+                ),
+            )
+        else:
+            embed = make_image_embed(
+                taxon=self.query_response.taxon,
+                formatter=self.formatter,
+                index=self.formatter.image_number,
+            )
+        return embed
+
+
+class TaxonMenu(DiscordBaseMenu, CoreTaxonMenu):
+    ctx: commands.Context = None
+    author: discord.Member = None
+    message: discord.Message = None
+    home_place_button: discord.Button = None
+    query_place_button: discord.Button = None
+    user_button: discord.Button = None
+    query_user_button: discord.Button = None
+
+    def __init__(
+        self,
+        inat_client: iNatClient,
+        source: TaxonSource,
+        cog: commands.Cog,
+        message: discord.Message = None,
+        for_place: bool = False,
+        image_number: int = None,
+        related_embed: discord.Embed = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(**kwargs)
+        self.inat_client = inat_client
+        self.source = source
+        self.cog = cog
+        self.bot = None
+        self.message = message
+        self.ctx = None
+        self.author: Optional[discord.Member] = None
+        self.image_number = image_number
+        self.related_embed = related_embed
+        self.taxonomy_button = TaxonomyButton(discord.ButtonStyle.grey, 0)
+        self.stop_button = StopButton(discord.ButtonStyle.red, 0)
+        self.for_place = for_place
+        if self.for_place:
+            self.home_place_button = HomePlaceButton(discord.ButtonStyle.grey, 0)
+            self.query_place_button = QueryPlaceButton(discord.ButtonStyle.grey, 0)
+        else:
+            self.user_button = UserButton(discord.ButtonStyle.grey, 0)
+            self.query_user_button = QueryUserButton(discord.ButtonStyle.grey, 0)
+
+    async def on_timeout(self):
+        await self.message.edit(view=None)
+
+    async def start(self, ctx: commands.Context):
+        self.ctx = ctx
+        self.bot = self.cog.bot
+        self.author = ctx.author
+        # await self.source._prepare_once()
+        if self.for_place:
+            self.add_item(self.home_place_button)
+            self.add_item(self.query_place_button)
+        else:
+            self.add_item(self.user_button)
+            self.add_item(self.query_user_button)
+        if self.source.formatter.image_number is None:
+            self.add_item(self.taxonomy_button)
+        self.add_item(self.stop_button)
+        self.message = await self.send_initial_message(ctx)
+
+    async def _get_kwargs_from_page(self):
+        value = await discord.utils.maybe_coroutine(self.source.format_page)
+        if isinstance(value, dict):
+            return value
+        elif isinstance(value, str):
+            return {"content": value, "embed": None}
+        elif isinstance(value, discord.Embed):
+            if self.related_embed:
+                embeds = [self.related_embed, value]
+            else:
+                embeds = [value]
+            return {"embeds": embeds, "content": None}
+
+    async def send_initial_message(self, ctx: commands.Context):
+        """|coro|
+        The default implementation of :meth:`Menu.send_initial_message`
+        for the interactive pagination session.
+        This implementation shows the first page of the source.
+        """
+        self.ctx = ctx
+        kwargs = await self._get_kwargs_from_page()
+        self.message = await ctx.send(**kwargs, view=self)
+        return self.message
+
+    async def show_page(self, interaction: discord.Interaction):
+        self.current_page = 0
+        kwargs = await self._get_kwargs_from_page()
+        if interaction.response.is_done():
+            await interaction.edit_original_response(**kwargs, view=self)
+        else:
+            await interaction.response.edit_message(**kwargs, view=self)
+
+    async def interaction_check(self, interaction: discord.Interaction):
+        """Allow owner and known iNat user interactions."""
+        # Only some buttons can be pressed by known users:
+        if interaction.data.get("custom_id") in [
+            "user",
+            "query_user",
+            "home_place",
+            "query_place",
+            # "taxonomy",
+        ]:
+            dronefly_config = self.dronefly_ctx.config
+            try:
+                await dronefly_config.user_id(interaction.user)
+            except LookupError:
+                await interaction.response.send_message(
+                    content="Your iNat account is not known here.", ephemeral=True
+                )
+                return False
+            return True
+        elif interaction.user.id not in (
+            *interaction.client.owner_ids,
+            getattr(self.author, "id", None),
+        ):
+            # Other buttons can only be pressed by the owner:
+            await interaction.response.send_message(
+                content="Only the command owner can do this.", ephemeral=True
+            )
+            return False
+        return True
