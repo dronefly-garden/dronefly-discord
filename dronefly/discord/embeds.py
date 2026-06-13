@@ -1,7 +1,10 @@
+import asyncio
+import io
 from functools import wraps
 
 import discord
 import inflect
+import requests
 from pyinaturalist.models import IconPhoto, Taxon
 
 from dronefly.core import formatters
@@ -117,15 +120,41 @@ def get_taxon_photo(taxon, index):
     return (taxon_photo, description)
 
 
-def make_image_embed(taxon: Taxon, formatter: TaxonFormatter, index: int = 1):
+async def fetch_image_bytes(url: str, session=None) -> bytes | None:
+    try:
+        if session is not None:
+            response = await asyncio.to_thread(session.get, url, timeout=15)
+        else:
+            response = await asyncio.to_thread(requests.get, url, timeout=15)
+        response.raise_for_status()
+        return response.content
+    except Exception:
+        return None
+
+
+async def make_image_embed(
+    taxon: Taxon,
+    formatter: TaxonFormatter,
+    index: int = 1,
+    session=None,
+):
     title = formatter.format_title()
 
     (taxon_photo, description) = get_taxon_photo(taxon, index)
     formatter.image_description = description
     embed = make_embed(url=f"{WWW_BASE_URL}/taxa/{taxon.id}")
     embed.title = title
+    file = None
     if taxon_photo:
-        embed.set_image(url=taxon_photo.original_url)
+        image_bytes = await fetch_image_bytes(taxon_photo.original_url, session=session)
+        if image_bytes:
+            filename = f"taxon-{taxon.id}-{index}.png"
+            file = discord.File(io.BytesIO(image_bytes), filename=filename)
+            embed.set_image(url=f"attachment://{filename}")
+        else:
+            embed.set_image(url=taxon_photo.original_url)
         embed.set_footer(text=taxon_photo.attribution)
     embed.description = formatter.format()
+    if file:
+        return {"embed": embed, "file": file}
     return embed
