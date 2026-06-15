@@ -4,8 +4,7 @@ from functools import wraps
 
 import discord
 import inflect
-import requests
-from pyinaturalist.models import IconPhoto, Taxon
+from pyinaturalist.models import IconPhoto, Photo, Taxon
 
 from dronefly.core import formatters
 from dronefly.core.formatters.constants import WWW_BASE_URL
@@ -120,16 +119,24 @@ def get_taxon_photo(taxon, index):
     return (taxon_photo, description)
 
 
-async def fetch_image_bytes(url: str, session=None) -> bytes | None:
+async def fetch_image_bytes(
+    photo: Photo, size: str = "large", open_timeout: float = 15
+) -> bytes | None:
+    binary_stream = None
     try:
-        if session is not None:
-            response = await asyncio.to_thread(session.get, url, timeout=15)
-        else:
-            response = await asyncio.to_thread(requests.get, url, timeout=15)
-        response.raise_for_status()
-        return response.content
-    except Exception:
-        return None
+
+        def open_and_read():
+            nonlocal binary_stream
+            binary_stream = photo.open(size)  # blocking; run inside thread
+            return binary_stream.read()
+
+        data = await asyncio.to_thread(
+            open_and_read,
+        )
+        return data
+    finally:
+        if binary_stream is not None:
+            binary_stream.close()
 
 
 async def make_image_embed(
@@ -146,12 +153,16 @@ async def make_image_embed(
     embed.title = title
     file = None
     if taxon_photo:
-        image_bytes = await fetch_image_bytes(taxon_photo.original_url, session=session)
+        image_bytes = await fetch_image_bytes(taxon_photo, "original")
         if image_bytes:
+            print("fetched image bytes")
             filename = f"taxon-{taxon.id}-{index}.png"
-            file = discord.File(io.BytesIO(image_bytes), filename=filename)
+            buf = io.BytesIO(image_bytes)
+            buf.seek(0)
+            file = discord.File(buf, filename=filename)
             embed.set_image(url=f"attachment://{filename}")
         else:
+            print("falling back to image url")
             embed.set_image(url=taxon_photo.original_url)
         embed.set_footer(text=taxon_photo.attribution)
     embed.description = formatter.format()

@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from math import floor
 from typing import Any, Optional
@@ -16,7 +15,6 @@ from dronefly.core.menus import (
     TaxonSource as CoreTaxonSource,
 )
 from pyinaturalist import ROOT_TAXON_ID, Taxon
-from pyinaturalist.models import IconPhoto
 from requests import HTTPError
 
 from .embeds import make_count_embed, make_embed, make_image_embed, make_taxa_embed
@@ -86,14 +84,12 @@ class ImageForwardButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction):
         view = self.view
-        formatter = view.source.formatter
-        if formatter.image_number is None:
-            return
-        photo_count = len(getattr(formatter.taxon, "taxon_photos", []))
-        max_images = photo_count + (1 if formatter.taxon.default_photo else 0)
-        if formatter.image_number < max_images:
-            formatter.image_number += 1
-            await view.show_page(interaction)
+        select = view.taxon_image_select
+        if select.selected < select.max_image_number:
+            select.selected += 1
+        else:
+            select.selected = select.max_image_number
+        await view.show_page(interaction)
 
 
 class BackButton(discord.ui.Button):
@@ -122,12 +118,12 @@ class ImageBackButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction):
         view = self.view
-        formatter = view.source.formatter
-        if formatter.image_number is None:
-            return
-        if formatter.image_number > 1:
-            formatter.image_number -= 1
-            await view.show_page(interaction)
+        select = view.taxon_image_select
+        if select.selected > 1:
+            select.selected -= 1
+        else:
+            select.selected = 1
+        await view.show_page(interaction)
 
 
 class LastItemButton(discord.ui.Button):
@@ -295,6 +291,68 @@ class SelectTaxonListTaxon(discord.ui.Select):
         options = []
         for (value, taxon) in enumerate(self.taxa):
             options.append(SelectTaxonOption(value, taxon, default=(value == selected)))
+        return options
+
+
+class TaxonImageOption(discord.SelectOption):
+    def __init__(
+        self,
+        *args,
+        value: int,
+        max_image_number: int,
+        **kwargs,
+    ):
+        if max_image_number <= 1:
+            raise ValueError("max_image_number must be > 0")
+        label = f"Taxon image {value}/{max_image_number}"
+        _kwargs = {"value": value, "label": label, **kwargs}
+        super().__init__(*args, **_kwargs)
+
+
+class TaxonImageSelect(discord.ui.Select):
+    def __init__(
+        self,
+        max_image_number: int = 1,
+        placeholder: Optional[str] = "",
+        selected: Optional[int] = 1,
+        **kwargs,
+    ):
+        options = self._make_options(selected, max_image_number)
+        self._initially_selected = selected
+        self.max_image_number = max_image_number
+        super().__init__(
+            min_values=1,
+            max_values=1,
+            placeholder=placeholder,
+            options=options,
+            **kwargs,
+        )
+
+    @property
+    def selected(self):
+        return self.view.source.formatter.image_number or self._initially_selected
+
+    @selected.setter
+    def selected(self, value: int = 1):
+        self.view.source.formatter.image_number = value
+        for image_number in range(1, self.max_image_number + 1):
+            self.options[image_number - 1].default = image_number == value
+
+    async def callback(self, interaction: discord.Interaction):
+        image_number = int(self.values[0])
+        self.selected = image_number
+        await self.view.show_page(interaction)
+
+    def _make_options(self, selected: int = 1, max_image_number: int = 1):
+        options = []
+        for value in range(1, max_image_number + 1):
+            options.append(
+                TaxonImageOption(
+                    value=value,
+                    max_image_number=max_image_number,
+                    default=value == selected,
+                )
+            )
         return options
 
 
@@ -927,10 +985,19 @@ class TaxonMenu(DiscordBaseMenu, CoreTaxonMenu):
     ctx: commands.Context = None
     author: discord.Member = None
     message: discord.Message = None
+    taxon_image_select: discord.ui.Select = None
     home_place_button: discord.Button = None
     query_place_button: discord.Button = None
     user_button: discord.Button = None
     query_user_button: discord.Button = None
+
+    def _add_social_buttons(self):
+        if self.for_place:
+            self.add_item(self.home_place_button)
+            self.add_item(self.query_place_button)
+        else:
+            self.add_item(self.user_button)
+            self.add_item(self.query_user_button)
 
     def __init__(
         self,
@@ -951,78 +1018,34 @@ class TaxonMenu(DiscordBaseMenu, CoreTaxonMenu):
         self.message = message
         self.ctx = None
         self.author: Optional[discord.Member] = None
-        self.image_number = image_number
-        self.related_embed = related_embed
-        self.taxonomy_button = TaxonomyButton(discord.ButtonStyle.grey, 0)
-        self.stop_button = StopButton(discord.ButtonStyle.red, 0)
-        self.image_back_button = ImageBackButton(discord.ButtonStyle.grey, 0)
-        self.image_forward_button = ImageForwardButton(discord.ButtonStyle.grey, 0)
-        self._image_fetch_tasks: dict[str, asyncio.Task[None]] = {}
-        self._image_urls: list[str] = []
         self.for_place = for_place
-        if self.for_place:
-            self.home_place_button = HomePlaceButton(discord.ButtonStyle.grey, 0)
-            self.query_place_button = QueryPlaceButton(discord.ButtonStyle.grey, 0)
-        else:
-            self.user_button = UserButton(discord.ButtonStyle.grey, 0)
-            self.query_user_button = QueryUserButton(discord.ButtonStyle.grey, 0)
+        self.related_embed = related_embed
 
-    def _get_image_urls(self) -> list[str]:
-        urls: list[str] = []
-        taxon = self.source.query_response.taxon
-        if (
-            self.source.formatter.image_number == 1
-            and taxon.default_photo
-            and not isinstance(taxon.default_photo, IconPhoto)
-        ):
-            if taxon.default_photo.original_url:
-                urls.append(taxon.default_photo.original_url)
-        urls.extend(
-            photo.original_url
-            for photo in getattr(taxon, "taxon_photos", [])
-            if getattr(photo, "original_url", None)
+        row = 0
+        self.home_place_button = HomePlaceButton(discord.ButtonStyle.grey, row)
+        self.query_place_button = QueryPlaceButton(discord.ButtonStyle.grey, row)
+        self.user_button = UserButton(discord.ButtonStyle.grey, row)
+        self.query_user_button = QueryUserButton(discord.ButtonStyle.grey, row)
+        self.image_back_button = ImageBackButton(discord.ButtonStyle.grey, row)
+        self.image_forward_button = ImageForwardButton(discord.ButtonStyle.grey, row)
+        self.taxonomy_button = TaxonomyButton(discord.ButtonStyle.grey, row)
+        self.stop_button = StopButton(discord.ButtonStyle.red, row)
+
+        row = 1
+        taxon_photos = source.formatter.query_response.taxon.taxon_photos
+        self.taxon_image_select = TaxonImageSelect(
+            selected=image_number, max_image_number=len(taxon_photos), row=row
         )
-        return urls
 
-    def _current_image_url(self) -> Optional[str]:
-        taxon = self.source.query_response.taxon
-        index = self.source.formatter.image_number
-        if index is None:
-            return None
-        if (
-            index == 1
-            and taxon.default_photo
-            and not isinstance(taxon.default_photo, IconPhoto)
-        ):
-            return taxon.default_photo.original_url
-        if 1 <= index <= len(getattr(taxon, "taxon_photos", [])):
-            return taxon.taxon_photos[index - 1].original_url
-        return None
-
-    def _next_image_url(self) -> Optional[str]:
-        if not self._image_urls:
-            self._image_urls = self._get_image_urls()
-        index = self.source.formatter.image_number
-        if index is None:
-            return None
-        if 1 <= index < len(self._image_urls):
-            return self._image_urls[index]
-        return None
-
-    def _prefetch_image(self, url: Optional[str]) -> None:
-        if not url or url in self._image_cache or url in self._image_fetch_tasks:
-            return
-        self._image_fetch_tasks[url] = asyncio.create_task(self._prefetch_task(url))
-
-    async def _prefetch_task(self, url: str) -> None:
-        try:
-            await asyncio.to_thread(
-                self.inat_client.session.get,
-                url,
-                timeout=15,
-            )
-        finally:
-            self._image_fetch_tasks.pop(url, None)
+        self._add_social_buttons()
+        if source.formatter.image_number is not None:
+            self.add_item(self.image_back_button)
+            self.add_item(self.image_forward_button)
+            self.add_item(self.stop_button)
+            self.add_item(self.taxon_image_select)
+        else:
+            self.add_item(self.taxonomy_button)
+            self.add_item(self.stop_button)
 
     async def on_timeout(self):
         await self.message.edit(view=None)
@@ -1031,24 +1054,7 @@ class TaxonMenu(DiscordBaseMenu, CoreTaxonMenu):
         self.ctx = ctx
         self.bot = self.cog.bot
         self.author = ctx.author
-        if self.source.formatter.image_number is not None:
-            self._image_urls = self._get_image_urls()
-            self._prefetch_image(self._current_image_url())
-            self._prefetch_image(self._next_image_url())
-        # await self.source._prepare_once()
-        if self.for_place:
-            self.add_item(self.home_place_button)
-            self.add_item(self.query_place_button)
-        else:
-            self.add_item(self.user_button)
-            self.add_item(self.query_user_button)
-        if self.source.formatter.image_number is None:
-            self.add_item(self.taxonomy_button)
-        else:
-            self.add_item(self.image_back_button)
-            self.add_item(self.image_forward_button)
-        self.add_item(self.stop_button)
-        self.message = await self.send_initial_message(ctx)
+        self.message = await self.send_initial_message(ctx.interaction)
 
     async def _get_kwargs_from_page(self):
         if (
@@ -1069,34 +1075,46 @@ class TaxonMenu(DiscordBaseMenu, CoreTaxonMenu):
                 embeds = [value]
             return {"embeds": embeds, "content": None}
 
-    async def send_initial_message(self, ctx: commands.Context):
-        """|coro|
-        The default implementation of :meth:`Menu.send_initial_message`
-        for the interactive pagination session.
-        This implementation shows the first page of the source.
-        """
-        self.ctx = ctx
+    async def send_initial_message(self, ctx: discord.Context):
         kwargs = await self._get_kwargs_from_page()
-        self.message = await ctx.send(**kwargs, view=self)
+        interaction = getattr(ctx, "interaction", None)
+        if interaction is None:
+            self.message = await ctx.send(**kwargs, view=self)
+            return self.message
+
+        if not interaction.response.is_done():
+            msg = await interaction.response.send_message(**kwargs, view=self)
+            if msg is None:
+                self.message = await interaction.original_response()
+            else:
+                self.message = msg
+        else:
+            self.message = await interaction.followup.send(**kwargs, view=self)
+
         return self.message
 
     async def show_page(self, interaction: discord.Interaction):
         self.current_page = 0
         kwargs = await self._get_kwargs_from_page()
         file = kwargs.pop("file", None)
+
         if file is not None:
             if not interaction.response.is_done():
                 await interaction.response.defer()
-            self.message = await self.message.edit(
-                attachments=[file],
-                view=self,
-                **kwargs,
-            )
+                self.message = await interaction.original_response()
+                await self.message.edit(attachments=[file], view=self, **kwargs)
+            else:
+                await interaction.edit_original_response(
+                    attachments=[file], view=self, **kwargs
+                )
             return
-        if interaction.response.is_done():
-            await interaction.edit_original_response(**kwargs, view=self)
-        else:
+
+        if not interaction.response.is_done():
             await interaction.response.edit_message(**kwargs, view=self)
+            self.message = await interaction.original_response()
+        else:
+            await interaction.edit_original_response(**kwargs, view=self)
+            self.message = await interaction.original_response()
 
     async def interaction_check(self, interaction: discord.Interaction):
         """Allow owner and known iNat user interactions."""
