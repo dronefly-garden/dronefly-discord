@@ -155,14 +155,12 @@ async def make_image_embed(
     if taxon_photo:
         image_bytes = await fetch_image_bytes(taxon_photo, "original")
         if image_bytes:
-            print("fetched image bytes")
             filename = f"taxon-{taxon.id}-{index}.png"
             buf = io.BytesIO(image_bytes)
             buf.seek(0)
             file = discord.File(buf, filename=filename)
             embed.set_image(url=f"attachment://{filename}")
         else:
-            print("falling back to image url")
             embed.set_image(url=taxon_photo.original_url)
         embed.set_footer(text=taxon_photo.attribution)
     embed.description = formatter.format()
