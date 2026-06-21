@@ -88,7 +88,7 @@ class ImageForwardButton(discord.ui.Button):
         if select.selected < select.max_image_number:
             select.selected += 1
         else:
-            select.selected = select.max_image_number
+            select.selected = 1
         await view.show_page(interaction)
 
 
@@ -122,7 +122,7 @@ class ImageBackButton(discord.ui.Button):
         if select.selected > 1:
             select.selected -= 1
         else:
-            select.selected = 1
+            select.selected = select.max_image_number
         await view.show_page(interaction)
 
 
