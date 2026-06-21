@@ -1,6 +1,6 @@
 import logging
 from math import floor
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 import discord
 from discord.ext import commands
@@ -18,6 +18,7 @@ from pyinaturalist import ROOT_TAXON_ID, Taxon
 from requests import HTTPError
 
 from .embeds import make_count_embed, make_embed, make_image_embed, make_taxa_embed
+from .commands import InteractionContext
 
 logger = logging.getLogger(__name__)
 
@@ -1050,11 +1051,11 @@ class TaxonMenu(DiscordBaseMenu, CoreTaxonMenu):
     async def on_timeout(self):
         await self.message.edit(view=None)
 
-    async def start(self, ctx: commands.Context):
+    async def start(self, ctx: Union[InteractionContext, commands.Context]):
         self.ctx = ctx
         self.bot = self.cog.bot
         self.author = ctx.author
-        self.message = await self.send_initial_message(ctx.interaction)
+        self.message = await self.send_initial_message(ctx)
 
     async def _get_kwargs_from_page(self):
         if (
@@ -1075,7 +1076,9 @@ class TaxonMenu(DiscordBaseMenu, CoreTaxonMenu):
                 embeds = [value]
             return {"embeds": embeds, "content": None}
 
-    async def send_initial_message(self, ctx: discord.Context):
+    async def send_initial_message(
+        self, ctx: Union[InteractionContext, commands.Context]
+    ):
         kwargs = await self._get_kwargs_from_page()
         interaction = getattr(ctx, "interaction", None)
         if interaction is None:
