@@ -710,14 +710,14 @@ voice = ["PyNaCl (>=1.5.0,<1.6)"]
 
 [[package]]
 name = "dronefly-core"
-version = "0.5.0.dev1"
+version = "0.5.0"
 description = "Core dronefly components"
 optional = false
 python-versions = "<3.13,>=3.11"
 groups = ["main"]
 files = [
-    {file = "dronefly_core-0.5.0.dev1-py3-none-any.whl", hash = "sha256:34c7cbfc9ba9694f96af08c7393d8997b246ba21554b12abb8153b0992d37a22"},
-    {file = "dronefly_core-0.5.0.dev1.tar.gz", hash = "sha256:2060280598761f51d4d6b0a10a5415d70eb8dc55a584a496ed8933661bb98e10"},
+    {file = "dronefly_core-0.5.0-py3-none-any.whl", hash = "sha256:bb35e5e6bf36b9c8bb117cd2f5c5dd75f9e0e237c626bbac82ec20831f1f4120"},
+    {file = "dronefly_core-0.5.0.tar.gz", hash = "sha256:c76b7f92e26964cd1ac11964ed951c44f74490fca56a65a41122de984fff63c3"},
 ]
 
 [package.dependencies]
@@ -2435,4 +2435,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.12"
-content-hash = "a36591258bb4e87c8b3b4d8cea4d10f01d9defce255d3be91b6c96e41feb41c9"
+content-hash = "75be16e885f4aefbc5f77a2bd95315f8d10038ca0005884f02411d1de6983679"
