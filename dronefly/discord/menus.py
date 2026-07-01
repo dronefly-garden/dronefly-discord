@@ -360,12 +360,29 @@ class TaxonImageSelect(discord.ui.Select):
 class DiscordBaseMenu(discord.ui.View):
     def __init__(
         self,
+        interaction: discord.Interaction,
         timeout: int = 60,
         **kwargs: Any,
     ) -> None:
         super().__init__(
             timeout=timeout,
         )
+        self.interaction = interaction
+        self.message = None
+
+    async def on_timeout(self):
+        self.stop()
+
+        if self.message is None:
+            try:
+                self.message = await self.interaction.original_response()
+            except discord.HTTPException:
+                return
+
+        try:
+            await self.message.edit(view=None)
+        except (discord.HTTPException, discord.NotFound):
+            pass
 
 
 class UserButton(discord.ui.Button):
@@ -613,9 +630,6 @@ class TaxonListMenu(DiscordBaseMenu, CoreTaxonListMenu):
         self.add_item(self.back_button)
         self.add_item(self.forward_button)
         self.add_item(self.last_item)
-
-    async def on_timeout(self):
-        await self.message.edit(view=None)
 
     async def start(self, ctx: commands.Context):
         ctx.selected = 0
@@ -873,9 +887,6 @@ class CountMenu(DiscordBaseMenu, CoreCountMenu):
             self.query_user_button = QueryUserButton(discord.ButtonStyle.grey, 0)
         super().__init__(**kwargs)
 
-    async def on_timeout(self):
-        await self.message.edit(view=None)
-
     async def start(self, ctx: commands.Context):
         self.ctx = ctx
         self.author = ctx.author
@@ -1051,9 +1062,6 @@ class TaxonMenu(DiscordBaseMenu, CoreTaxonMenu):
         else:
             self.add_item(self.taxonomy_button)
             self.add_item(self.stop_button)
-
-    async def on_timeout(self):
-        await self.message.edit(view=None)
 
     async def start(self, ctx: Union[InteractionContext, commands.Context]):
         self.ctx = ctx
