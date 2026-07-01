@@ -303,8 +303,6 @@ class TaxonImageOption(discord.SelectOption):
         max_image_number: int,
         **kwargs,
     ):
-        if max_image_number <= 1:
-            raise ValueError("max_image_number must be > 0")
         label = f"Taxon image {value}/{max_image_number}"
         _kwargs = {"value": value, "label": label, **kwargs}
         super().__init__(*args, **_kwargs)
@@ -346,15 +344,17 @@ class TaxonImageSelect(discord.ui.Select):
 
     def _make_options(self, selected: int = 1, max_image_number: int = 1):
         options = []
-        for value in range(1, max_image_number + 1):
-            options.append(
-                TaxonImageOption(
-                    value=value,
-                    max_image_number=max_image_number,
-                    default=value == selected,
+        if max_image_number > 1:
+            range_end_exclusive = max_image_number + 1
+            for value in range(1, range_end_exclusive):
+                options.append(
+                    TaxonImageOption(
+                        value=value,
+                        max_image_number=max_image_number,
+                        default=value == selected,
+                    )
                 )
-            )
-        return options
+            return options
 
 
 class DiscordBaseMenu(discord.ui.View):
@@ -1033,17 +1033,21 @@ class TaxonMenu(DiscordBaseMenu, CoreTaxonMenu):
         self.stop_button = StopButton(discord.ButtonStyle.red, row)
 
         row = 1
-        taxon_photos = source.formatter.query_response.taxon.taxon_photos
-        self.taxon_image_select = TaxonImageSelect(
-            selected=image_number, max_image_number=len(taxon_photos), row=row
-        )
 
         self._add_social_buttons()
         if source.formatter.image_number is not None:
-            self.add_item(self.image_back_button)
-            self.add_item(self.image_forward_button)
+            taxon_photos = source.formatter.query_response.taxon.taxon_photos
+            max_image_number = len(taxon_photos)
+            add_image_nav_controls = max_image_number > 1
+            if add_image_nav_controls:
+                self.taxon_image_select = TaxonImageSelect(
+                    selected=image_number, max_image_number=max_image_number, row=row
+                )
+                self.add_item(self.image_back_button)
+                self.add_item(self.image_forward_button)
             self.add_item(self.stop_button)
-            self.add_item(self.taxon_image_select)
+            if add_image_nav_controls:
+                self.add_item(self.taxon_image_select)
         else:
             self.add_item(self.taxonomy_button)
             self.add_item(self.stop_button)
