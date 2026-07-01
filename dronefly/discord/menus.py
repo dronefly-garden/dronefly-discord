@@ -360,24 +360,17 @@ class TaxonImageSelect(discord.ui.Select):
 class DiscordBaseMenu(discord.ui.View):
     def __init__(
         self,
-        interaction: discord.Interaction,
         timeout: int = 60,
         **kwargs: Any,
     ) -> None:
-        super().__init__(
-            timeout=timeout,
-        )
-        self.interaction = interaction
+        super().__init__(timeout=timeout)
         self.message = None
 
     async def on_timeout(self):
         self.stop()
 
         if self.message is None:
-            try:
-                self.message = await self.interaction.original_response()
-            except discord.HTTPException:
-                return
+            return
 
         try:
             await self.message.edit(view=None)
