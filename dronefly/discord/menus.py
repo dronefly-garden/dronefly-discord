@@ -5,22 +5,43 @@ from typing import Any, Optional, Union
 import discord
 from discord.ext import commands
 from dronefly.core.clients.inat import iNatClient
-from dronefly.core.formatters import TaxonListFormatter
+from dronefly.core.formatters import ObservationSearchFormatter, TaxonListFormatter
 from dronefly.core.menus import (
     CountMenu as CoreCountMenu,
     CountSource as CoreCountSource,
+    ObservationSearchMenu as CoreObservationSearchMenu,
+    ObservationSearchSource as CoreObservationSearchSource,
     TaxonMenu as CoreTaxonMenu,
     TaxonListMenu as CoreTaxonListMenu,
     TaxonListSource as CoreTaxonListSource,
     TaxonSource as CoreTaxonSource,
 )
-from pyinaturalist import ROOT_TAXON_ID, Taxon
+from pyinaturalist import ROOT_TAXON_ID, Observation, Taxon
 from requests import HTTPError
 
 from .embeds import make_count_embed, make_embed, make_image_embed, make_taxa_embed
 from .commands import InteractionContext
 
 logger = logging.getLogger(__name__)
+
+
+class ObservationSearchSource(CoreObservationSearchSource):
+    def format_page(
+        self,
+        page: list[Observation],
+        page_number: int = 0,
+        selected: Optional[int] = None,
+    ):
+        formatter = self._observation_search_formatter
+        query_response = self.query_response
+        embed = make_embed(
+            title=f"{self.formatter.short_description} {query_response.obs_query_description()}"
+        )
+        if self._url:
+            embed.url = self._url
+        embed.description = formatter.format_page(page, page_number, selected)
+        embed.set_footer(text=f"Page {page_number + 1}/{self.get_max_pages()}")
+        return embed
 
 
 class TaxonListSource(CoreTaxonListSource):
@@ -251,6 +272,54 @@ class CommonButton(discord.ui.Button):
         await view.update_source(interaction, with_common=not formatter.with_common)
 
 
+class SelectObservationOption(discord.SelectOption):
+    def __init__(
+        self,
+        value: int,
+        observation: Observation,
+        default: int,
+    ):
+        super().__init__(
+            label=observation.taxon.full_name, value=str(value), default=default
+        )
+
+
+class SelectObservation(discord.ui.Select):
+    def __init__(
+        self,
+        view: discord.ui.View,
+        placeholder: Optional[str] = "Select an observation",
+        page: list[Observation] = [],
+        selected: Optional[int] = 0,
+    ):
+        view.ctx.selected = selected
+        self.observations = page
+        options = self._make_options(selected)
+        super().__init__(
+            min_values=1, max_values=1, placeholder=placeholder, options=options
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        self.view.ctx.selected = self.values[0]
+        await self.view.update_source(interaction)
+
+    def observation(self):
+        return self.observations[int(self.view.ctx.selected)]
+
+    def update_options(self, page=list[Observation], selected: Optional[int] = 0):
+        self.view.ctx.selected = selected
+        self.taxa = page
+        self.options = self._make_options(selected)
+
+    def _make_options(self, selected):
+        options = []
+        for value, observation in enumerate(self.observations):
+            options.append(
+                SelectObservationOption(value, observation, default=(value == selected))
+            )
+        return options
+
+
 class SelectTaxonOption(discord.SelectOption):
     def __init__(
         self,
@@ -290,7 +359,7 @@ class SelectTaxonListTaxon(discord.ui.Select):
 
     def _make_options(self, selected):
         options = []
-        for (value, taxon) in enumerate(self.taxa):
+        for value, taxon in enumerate(self.taxa):
             options.append(SelectTaxonOption(value, taxon, default=(value == selected)))
         return options
 
@@ -587,6 +656,119 @@ class TaxonomyButton(discord.ui.Button):
         await interaction.response.defer()
         self.view.source.toggle_ancestors()
         await self.view.show_page(interaction)
+
+
+class ObservationSearchMenu(DiscordBaseMenu, CoreObservationSearchMenu):
+    def __init__(
+        self,
+        source: ObservationSearchSource,
+        cog: commands.Cog,
+        message: discord.Message = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(**kwargs)
+        self.source = source
+        self.cog = cog
+        self.bot = None
+        self.message = message
+        self.ctx = None
+        self.author: Optional[discord.Member] = None
+        self.current_page = kwargs.get("page_start", 0)
+        self.forward_button = ForwardButton(discord.ButtonStyle.grey, 0)
+        self.back_button = BackButton(discord.ButtonStyle.grey, 0)
+        self.first_item = FirstItemButton(discord.ButtonStyle.grey, 0)
+        self.last_item = LastItemButton(discord.ButtonStyle.grey, 0)
+        self.stop_button = StopButton(discord.ButtonStyle.red, 0)
+        self.add_item(self.stop_button)
+        self.add_item(self.first_item)
+        self.add_item(self.back_button)
+        self.add_item(self.forward_button)
+        self.add_item(self.last_item)  # note: should be disabled until all pages read
+
+    async def start(self, ctx: commands.Context):
+        ctx.selected = 0
+        self.ctx = ctx
+        self.bot = self.cog.bot
+        self.author = ctx.author
+        # await self.source._prepare_once()
+        self.message = await self.send_initial_message(ctx)
+
+    async def _get_kwargs_from_page(self, page):
+        selected = None
+        if isinstance(self.source, ObservationSearchSource):
+            selected = self.ctx.selected
+        value = await discord.utils.maybe_coroutine(
+            self.source.format_page, page, self.current_page, selected
+        )
+        if isinstance(value, dict):
+            return value
+        elif isinstance(value, str):
+            return {"content": value, "embed": None}
+        elif isinstance(value, discord.Embed):
+            return {"embed": value, "content": None}
+
+    async def send_initial_message(self, ctx: commands.Context):
+        """|coro|
+        The default implementation of :meth:`Menu.send_initial_message`
+        for the interactive pagination session.
+        This implementation shows the first page of the source.
+        """
+        self.ctx = ctx
+        page = await self.source.get_page(self.current_page)
+        kwargs = await self._get_kwargs_from_page(page)
+        self.message = await ctx.send(**kwargs, view=self)
+        return self.message
+
+    async def show_page(
+        self, page_number: int, interaction: discord.Interaction, selected: int = 0
+    ):
+        page = await self.source.get_page(page_number)
+        self.current_page = page_number
+        self.ctx.selected = selected
+        kwargs = await self._get_kwargs_from_page(page)
+        self.select_observation.update_options(page, selected)
+        if interaction.response.is_done():
+            await interaction.edit_original_response(**kwargs, view=self)
+        else:
+            await interaction.response.edit_message(**kwargs, view=self)
+
+    async def show_checked_page(
+        self, page_number: int, interaction: discord.Interaction
+    ) -> None:
+        max_pages = self.source.get_max_pages()
+        try:
+            if max_pages is None:
+                # If it doesn't give maximum pages, it cannot be checked
+                await self.show_page(page_number, interaction)
+            elif page_number >= max_pages:
+                await self.show_page(0, interaction)
+            elif page_number < 0:
+                await self.show_page(max_pages - 1, interaction)
+            elif max_pages > page_number >= 0:
+                await self.show_page(page_number, interaction)
+        except IndexError:
+            # An error happened that can be handled, so ignore it.
+            pass
+
+    async def interaction_check(self, interaction: discord.Interaction):
+        """Just extends the default reaction_check to use owner_ids"""
+        if interaction.user.id not in (
+            *interaction.client.owner_ids,
+            getattr(self.author, "id", None),
+        ):
+            await interaction.response.send_message(
+                content="You are not authorized to interact with this.", ephemeral=True
+            )
+            return False
+        return True
+
+    @property
+    def formatter(self) -> ObservationSearchFormatter:
+        return self.source.formatter
+
+    async def update_source(self, interaction: discord.Interaction, **kwargs):
+        await interaction.response.defer()
+        await self.show_page(self.current_page, interaction, self.selected)
 
 
 class TaxonListMenu(DiscordBaseMenu, CoreTaxonListMenu):

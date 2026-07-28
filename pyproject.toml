@@ -1,6 +1,6 @@
 [project]
 name = "dronefly-discord"
-version = "0.2.1"
+version = "0.2.2"
 description = "Dronefly Discord library"
 authors = [{ name = "Ben Armstrong", email = "synrg@debian.org" }]
 requires-python = ">=3.11,<3.12"
@@ -15,6 +15,9 @@ dependencies = [
     "discord-py>=2.3.1",
     "dronefly-core==0.5.1",
 ]
+
+[tool.black]
+target-version = ['py311']
 
 [tool.flake8]
 max-line-length = 100
