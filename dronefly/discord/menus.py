@@ -34,6 +34,7 @@ class ObservationSearchSource(CoreObservationSearchSource):
     ):
         formatter = self._observation_search_formatter
         query_response = self.query_response
+        embeds = []
         embed = make_embed(
             title=f"{self.formatter.short_description} {query_response.obs_query_description()}"
         )
@@ -41,7 +42,13 @@ class ObservationSearchSource(CoreObservationSearchSource):
             embed.url = self._url
         embed.description = formatter.format_page(page, page_number, selected)
         embed.set_footer(text=f"Page {page_number + 1}/{self.get_max_pages()}")
-        return embed
+        for i, obs in enumerate(page):
+            # add image embeds for all images:
+            if i > 0:
+                embed = discord.Embed(url=self._url)
+            embed.set_image(url=obs.default_photo.original_url)
+            embeds.append(embed)
+        return embeds
 
 
 class TaxonListSource(CoreTaxonListSource):
@@ -704,6 +711,8 @@ class ObservationSearchMenu(DiscordBaseMenu, CoreObservationSearchMenu):
             return value
         elif isinstance(value, str):
             return {"content": value, "embed": None}
+        elif isinstance(value, list):
+            return {"embeds": value, "content": None}
         elif isinstance(value, discord.Embed):
             return {"embed": value, "content": None}
 
