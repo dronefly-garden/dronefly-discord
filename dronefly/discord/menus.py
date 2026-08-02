@@ -299,7 +299,7 @@ class SelectObservation(discord.ui.Select):
         page: list[Observation] = [],
         selected: Optional[int] = 0,
     ):
-        view.ctx.selected = selected
+        view.selected = selected
         self.observations = page
         options = self._make_options(selected)
         super().__init__(
@@ -307,15 +307,15 @@ class SelectObservation(discord.ui.Select):
         )
 
     async def callback(self, interaction: discord.Interaction):
-        self.view.ctx.selected = self.values[0]
+        self.view.selected = int(self.values[0])
         await self.view.update_source(interaction)
 
     def observation(self):
-        return self.observations[int(self.view.ctx.selected)]
+        return self.observations[self.view.selected]
 
     def update_options(self, page=list[Observation], selected: Optional[int] = 0):
-        self.view.ctx.selected = selected
-        self.taxa = page
+        self.view.selected = selected
+        self.observations = page
         self.options = self._make_options(selected)
 
     def _make_options(self, selected):
@@ -686,14 +686,11 @@ class ObservationSearchMenu(DiscordBaseMenu, CoreObservationSearchMenu):
         self.first_item = FirstItemButton(discord.ButtonStyle.grey, 0)
         self.last_item = LastItemButton(discord.ButtonStyle.grey, 0)
         self.stop_button = StopButton(discord.ButtonStyle.red, 0)
+        self.select_observation = SelectObservation(view=self, page=[], selected=0)
         self.add_item(self.stop_button)
-        self.add_item(self.first_item)
-        self.add_item(self.back_button)
-        self.add_item(self.forward_button)
-        self.add_item(self.last_item)  # note: should be disabled until all pages read
 
     async def start(self, ctx: commands.Context):
-        ctx.selected = 0
+        self.selected = 0
         self.ctx = ctx
         self.bot = self.cog.bot
         self.author = ctx.author
@@ -703,7 +700,7 @@ class ObservationSearchMenu(DiscordBaseMenu, CoreObservationSearchMenu):
     async def _get_kwargs_from_page(self, page):
         selected = None
         if isinstance(self.source, ObservationSearchSource):
-            selected = self.ctx.selected
+            selected = self.selected
         value = await discord.utils.maybe_coroutine(
             self.source.format_page, page, self.current_page, selected
         )
@@ -725,6 +722,17 @@ class ObservationSearchMenu(DiscordBaseMenu, CoreObservationSearchMenu):
         self.ctx = ctx
         page = await self.source.get_page(self.current_page)
         kwargs = await self._get_kwargs_from_page(page)
+        if kwargs.get("embeds"):
+            self.add_item(self.first_item)
+            self.add_item(self.back_button)
+            self.add_item(self.forward_button)
+            self.add_item(
+                self.last_item
+            )  # note: should be disabled until all pages read
+            self.select_observation = SelectObservation(
+                view=self, page=page, selected=0
+            )
+            self.add_item(self.select_observation)
         self.message = await ctx.send(**kwargs, view=self)
         return self.message
 
@@ -733,9 +741,9 @@ class ObservationSearchMenu(DiscordBaseMenu, CoreObservationSearchMenu):
     ):
         page = await self.source.get_page(page_number)
         self.current_page = page_number
-        self.ctx.selected = selected
-        kwargs = await self._get_kwargs_from_page(page)
+        self.selected = selected
         self.select_observation.update_options(page, selected)
+        kwargs = await self._get_kwargs_from_page(page)
         if interaction.response.is_done():
             await interaction.edit_original_response(**kwargs, view=self)
         else:
