@@ -41,7 +41,10 @@ class ObservationSearchSource(CoreObservationSearchSource):
         if self._url:
             embed.url = self._url
         embed.description = formatter.format_page(page, page_number, selected)
-        embed.set_footer(text=f"Page {page_number + 1}/{self.get_max_pages()}")
+        footer = f"Page {page_number + 1}/{self.get_max_pages()}"
+        if self.count < self.total:
+            footer = f"{footer} (first {self.count} of {self.total} matches)"
+        embed.set_footer(text=footer)
         for i, obs in enumerate(page):
             # add image embeds for all images:
             if i > 0:
@@ -713,6 +716,18 @@ class ObservationSearchMenu(DiscordBaseMenu, CoreObservationSearchMenu):
         elif isinstance(value, discord.Embed):
             return {"embed": value, "content": None}
 
+    async def get_page(self, page_number):
+        _page_number = page_number
+        try:
+            page = await self.source.get_page(page_number)
+        except StopAsyncIteration:
+            # Back up and read the last page instead of the
+            # requested page:
+            _page_number = self.source.get_max_pages() - 1
+            page = await self.source.get_page(_page_number)
+        self.current_page = _page_number
+        return page
+
     async def send_initial_message(self, ctx: commands.Context):
         """|coro|
         The default implementation of :meth:`Menu.send_initial_message`
@@ -720,7 +735,7 @@ class ObservationSearchMenu(DiscordBaseMenu, CoreObservationSearchMenu):
         This implementation shows the first page of the source.
         """
         self.ctx = ctx
-        page = await self.source.get_page(self.current_page)
+        page = await self.get_page(self.current_page)
         kwargs = await self._get_kwargs_from_page(page)
         if kwargs.get("embeds"):
             self.add_item(self.first_item)
@@ -739,8 +754,7 @@ class ObservationSearchMenu(DiscordBaseMenu, CoreObservationSearchMenu):
     async def show_page(
         self, page_number: int, interaction: discord.Interaction, selected: int = 0
     ):
-        page = await self.source.get_page(page_number)
-        self.current_page = page_number
+        page = await self.get_page(page_number)
         self.selected = selected
         self.select_observation.update_options(page, selected)
         kwargs = await self._get_kwargs_from_page(page)
