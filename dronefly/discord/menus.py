@@ -1,11 +1,16 @@
 import logging
 from math import floor
+import re
 from typing import Any, Optional, Union
 
 import discord
 from discord.ext import commands
 from dronefly.core.clients.inat import iNatClient
-from dronefly.core.formatters import ObservationSearchFormatter, TaxonListFormatter
+from dronefly.core.formatters import (
+    ObservationFormatter,
+    ObservationSearchFormatter,
+    TaxonListFormatter,
+)
 from dronefly.core.menus import (
     CountMenu as CoreCountMenu,
     CountSource as CoreCountSource,
@@ -21,6 +26,7 @@ from requests import HTTPError
 
 from .embeds import make_count_embed, make_embed, make_image_embed, make_taxa_embed
 from .commands import InteractionContext
+from .constants import PROTECT_WHITESPACE
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +46,9 @@ class ObservationSearchSource(CoreObservationSearchSource):
         )
         if self._url:
             embed.url = self._url
-        embed.description = formatter.format_page(page, page_number, selected)
+        embed.description = PROTECT_WHITESPACE + formatter.format_page(
+            page, page_number, selected
+        )
         footer = f"Page {page_number + 1}/{self.get_max_pages()}"
         if self.count < self.total:
             footer = f"{footer} (first {self.count} of {self.total} matches)"
@@ -286,11 +294,13 @@ class SelectObservationOption(discord.SelectOption):
     def __init__(
         self,
         value: int,
-        observation: Observation,
+        label: str,
+        description: str,
         default: int,
     ):
+
         super().__init__(
-            label=observation.taxon.full_name, value=str(value), default=default
+            label=label, description=description, value=str(value), default=default
         )
 
 
@@ -304,7 +314,7 @@ class SelectObservation(discord.ui.Select):
     ):
         view.selected = selected
         self.observations = page
-        options = self._make_options(selected)
+        options = self._make_options(view, page)
         super().__init__(
             min_values=1, max_values=1, placeholder=placeholder, options=options
         )
@@ -319,13 +329,29 @@ class SelectObservation(discord.ui.Select):
     def update_options(self, page=list[Observation], selected: Optional[int] = 0):
         self.view.selected = selected
         self.observations = page
-        self.options = self._make_options(selected)
+        self.options = self._make_options(self.view, selected)
 
-    def _make_options(self, selected):
+    def _make_options(self, view, observations):
         options = []
-        for value, observation in enumerate(self.observations):
+        for value, observation in enumerate(observations):
+            with_user = not view.source.query_response.user
+            obs_formatter = ObservationFormatter(
+                observation,
+                compact=True,
+                with_link=False,
+                with_description=False,
+                with_user=with_user,
+            )
+            label, description = obs_formatter.format_title_summary(with_link=False)
+            # TODO: format select option directly rather than tearing it apart and
+            # reassemble with regex substitutions:
+            label = re.sub(r"(^\*|\*$)", "", label, re.MULTILINE)
+            description = re.sub(r"\`\s+", " ", description, re.MULTILINE)
+            description = re.sub(r"^\s+\`", "", description, re.MULTILINE)
             options.append(
-                SelectObservationOption(value, observation, default=(value == selected))
+                SelectObservationOption(
+                    value, label, description, default=(value == view.selected)
+                )
             )
         return options
 
