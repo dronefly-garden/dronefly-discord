@@ -329,7 +329,7 @@ class SelectObservation(discord.ui.Select):
     def update_options(self, page=list[Observation], selected: Optional[int] = 0):
         self.view.selected = selected
         self.observations = page
-        self.options = self._make_options(self.view, selected)
+        self.options = self._make_options(self.view, page)
 
     def _make_options(self, view, observations):
         options = []
