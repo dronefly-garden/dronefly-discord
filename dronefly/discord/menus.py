@@ -724,7 +724,7 @@ class ObservationSearchMenu(DiscordBaseMenu, CoreObservationSearchMenu):
         self.bot = self.cog.bot
         self.author = ctx.author
         # await self.source._prepare_once()
-        self.message = await self.send_initial_message(ctx)
+        return await self.send_initial_message(ctx)
 
     async def _get_kwargs_from_page(self, page):
         selected = None
@@ -869,7 +869,7 @@ class TaxonListMenu(DiscordBaseMenu, CoreTaxonListMenu):
         self.bot = self.cog.bot
         self.author = ctx.author
         # await self.source._prepare_once()
-        self.message = await self.send_initial_message(ctx)
+        return await self.send_initial_message(ctx)
 
     async def _get_kwargs_from_page(self, page):
         selected = None
@@ -1133,7 +1133,7 @@ class CountMenu(DiscordBaseMenu, CoreCountMenu):
         # Owner-only button to cancel the menu
         self.stop_button = StopButton(discord.ButtonStyle.red, 0)
         self.add_item(self.stop_button)
-        self.message = await self.send_initial_message(ctx)
+        return await self.send_initial_message(ctx)
 
     async def _get_kwargs_from_page(self):
         value = await discord.utils.maybe_coroutine(self.source.format_page)
@@ -1299,7 +1299,7 @@ class TaxonMenu(DiscordBaseMenu, CoreTaxonMenu):
         self.ctx = ctx
         self.bot = self.cog.bot
         self.author = ctx.author
-        self.message = await self.send_initial_message(ctx)
+        return await self.send_initial_message(ctx)
 
     async def _get_kwargs_from_page(self):
         if (
