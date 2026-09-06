@@ -365,10 +365,11 @@ class SelectObservation(discord.ui.Select):
                 with_description=False,
                 with_user=with_user,
             )
-            label, description = obs_formatter.format_title_summary(with_link=False)
+            label, description = obs_formatter.format_title_summary(
+                with_link=False, with_italics=False
+            )
             # TODO: format select option directly rather than tearing it apart and
             # reassemble with regex substitutions:
-            label = re.sub(r"(^\*|\*$)", "", label, re.MULTILINE)
             description = re.sub(r"\`\s+", " ", description, re.MULTILINE)
             description = re.sub(r"^\s+\`", "", description, re.MULTILINE)
             options.append(
