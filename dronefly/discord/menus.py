@@ -86,7 +86,7 @@ class StopButton(discord.ui.Button):
     ):
         super().__init__(style=style, row=row)
         self.style = style
-        self.emoji = "\N{HEAVY MULTIPLICATION X}\N{VARIATION SELECTOR-16}"
+        self.emoji = "\N{CROSS MARK}"
 
     async def callback(self, interaction: discord.Interaction):
         self.view.stop()
@@ -714,7 +714,7 @@ class ObservationSearchMenu(DiscordBaseMenu, CoreObservationSearchMenu):
         self.back_button = BackButton(discord.ButtonStyle.grey, 0)
         self.first_item = FirstItemButton(discord.ButtonStyle.grey, 0)
         self.last_item = LastItemButton(discord.ButtonStyle.grey, 0)
-        self.stop_button = StopButton(discord.ButtonStyle.red, 0)
+        self.stop_button = StopButton(discord.ButtonStyle.grey, 0)
         self.select_observation = SelectObservation(view=self, page=[], selected=0)
         self.add_item(self.stop_button)
 
@@ -848,7 +848,7 @@ class TaxonListMenu(DiscordBaseMenu, CoreTaxonListMenu):
         self.back_button = BackButton(discord.ButtonStyle.grey, 0)
         self.first_item = FirstItemButton(discord.ButtonStyle.grey, 0)
         self.last_item = LastItemButton(discord.ButtonStyle.grey, 0)
-        self.stop_button = StopButton(discord.ButtonStyle.red, 0)
+        self.stop_button = StopButton(discord.ButtonStyle.grey, 0)
         # Late bind these as which buttons are shown depends on page content:
         self.leaf_button = None
         self.per_rank_button = None
@@ -1131,7 +1131,7 @@ class CountMenu(DiscordBaseMenu, CoreCountMenu):
             self.add_item(self.user_button)
             self.add_item(self.query_user_button)
         # Owner-only button to cancel the menu
-        self.stop_button = StopButton(discord.ButtonStyle.red, 0)
+        self.stop_button = StopButton(discord.ButtonStyle.grey, 0)
         self.add_item(self.stop_button)
         return await self.send_initial_message(ctx)
 
@@ -1273,7 +1273,7 @@ class TaxonMenu(DiscordBaseMenu, CoreTaxonMenu):
         self.image_back_button = ImageBackButton(discord.ButtonStyle.grey, row)
         self.image_forward_button = ImageForwardButton(discord.ButtonStyle.grey, row)
         self.taxonomy_button = TaxonomyButton(discord.ButtonStyle.grey, row)
-        self.stop_button = StopButton(discord.ButtonStyle.red, row)
+        self.stop_button = StopButton(discord.ButtonStyle.grey, row)
 
         row = 1
 
