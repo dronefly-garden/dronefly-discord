@@ -1,7 +1,8 @@
+from copy import copy
 import logging
 from math import floor
 import re
-from typing import Any, Optional, Union
+from typing import Any, Awaitable, Callable, Optional, Union
 
 import discord
 from discord.ext import commands
@@ -288,6 +289,28 @@ class CommonButton(discord.ui.Button):
         view = self.view
         formatter = view.source._taxon_list_formatter
         await view.update_source(interaction, with_common=not formatter.with_common)
+
+
+class ShowObservationButton(discord.ui.Button):
+    def __init__(
+        self,
+        style: discord.ButtonStyle,
+        row: Optional[int],
+    ):
+        super().__init__(style=style, row=row)
+        self.style = style
+        self.emoji = "\N{WHITE HEAVY CHECK MARK}"
+
+    async def callback(self, interaction: discord.Interaction):
+        view = self.view
+        observation = view.select_observation.observation()
+        if observation:
+            await interaction.response.defer()
+            ctx = copy(self.view.ctx)
+            # Update the context to have an interaction. The obs command
+            # turns on preview when from an interaction.
+            ctx.interaction = interaction
+            await view.obs_command(ctx, query=str(observation.uri))
 
 
 class SelectObservationOption(discord.SelectOption):
@@ -699,6 +722,7 @@ class ObservationSearchMenu(DiscordBaseMenu, CoreObservationSearchMenu):
         self,
         source: ObservationSearchSource,
         cog: commands.Cog,
+        obs_command: Callable[[commands.Context, Any], Awaitable[Any]] = None,
         message: discord.Message = None,
         **kwargs: Any,
     ) -> None:
@@ -715,8 +739,9 @@ class ObservationSearchMenu(DiscordBaseMenu, CoreObservationSearchMenu):
         self.first_item = FirstItemButton(discord.ButtonStyle.grey, 0)
         self.last_item = LastItemButton(discord.ButtonStyle.grey, 0)
         self.stop_button = StopButton(discord.ButtonStyle.grey, 0)
+        self.show_obs_button = ShowObservationButton(discord.ButtonStyle.grey, 0)
+        self.obs_command = obs_command
         self.select_observation = SelectObservation(view=self, page=[], selected=0)
-        self.add_item(self.stop_button)
 
     async def start(self, ctx: commands.Context):
         self.selected = 0
@@ -764,12 +789,15 @@ class ObservationSearchMenu(DiscordBaseMenu, CoreObservationSearchMenu):
         page = await self.get_page(self.current_page)
         kwargs = await self._get_kwargs_from_page(page)
         if kwargs.get("embeds"):
-            self.add_item(self.first_item)
-            self.add_item(self.back_button)
-            self.add_item(self.forward_button)
-            self.add_item(
-                self.last_item
-            )  # note: should be disabled until all pages read
+            pages = self.source.get_max_pages()
+            if pages > 1:
+                self.add_item(self.back_button)
+                self.add_item(self.forward_button)
+            if pages > 3:
+                self.add_item(self.last_item)
+            if self.obs_command:
+                self.add_item(self.show_obs_button)
+            self.add_item(self.stop_button)
             self.select_observation = SelectObservation(
                 view=self, page=page, selected=0
             )
@@ -857,11 +885,11 @@ class TaxonListMenu(DiscordBaseMenu, CoreTaxonListMenu):
         self.select_taxon = None
         self.root_button = None
         self.root_taxon_id_stack = []
-        self.add_item(self.stop_button)
         self.add_item(self.first_item)
         self.add_item(self.back_button)
         self.add_item(self.forward_button)
         self.add_item(self.last_item)
+        self.add_item(self.stop_button)
 
     async def start(self, ctx: commands.Context):
         ctx.selected = 0
