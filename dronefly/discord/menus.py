@@ -245,20 +245,6 @@ class LeafButton(discord.ui.Button):
         await view.update_source(interaction, per_rank=_per_rank)
 
 
-class RootButton(discord.ui.Button):
-    def __init__(
-        self,
-        style: discord.ButtonStyle,
-        row: Optional[int],
-    ):
-        super().__init__(style=style, row=row)
-        self.style = style
-        self.emoji = "\N{TOP WITH UPWARDS ARROW ABOVE}"
-
-    async def callback(self, interaction: discord.Interaction):
-        await self.view.update_source(interaction, toggle_taxon_root=True)
-
-
 class DirectButton(discord.ui.Button):
     def __init__(
         self,
@@ -307,10 +293,29 @@ class ShowObservationButton(discord.ui.Button):
         if observation:
             await interaction.response.defer()
             ctx = copy(self.view.ctx)
-            # Update the context to have an interaction. The obs command
-            # turns on preview when from an interaction.
             ctx.interaction = interaction
             await view.obs_command(ctx, query=str(observation.uri))
+
+
+class ShowTaxonButton(discord.ui.Button):
+    def __init__(
+        self,
+        style: discord.ButtonStyle,
+        row: Optional[int],
+    ):
+        super().__init__(style=style, row=row)
+        self.style = style
+        self.emoji = "\N{WHITE HEAVY CHECK MARK}"
+
+    async def callback(self, interaction: discord.Interaction):
+        view = self.view
+        taxon_command = view.ctx.bot.get_command("taxon")
+        taxon = view.select_taxon.taxon()
+        if taxon:
+            await interaction.response.defer()
+            ctx = copy(self.view.ctx)
+            ctx.interaction = interaction
+            await taxon_command(ctx, query=str(taxon.id))
 
 
 class SelectObservationOption(discord.SelectOption):
@@ -857,6 +862,10 @@ class ObservationSearchMenu(DiscordBaseMenu, CoreObservationSearchMenu):
         await self.show_page(self.current_page, interaction, self.selected)
 
 
+def is_life_list(source):
+    return bool(getattr(source.entries[0], "descendant_obs_count", None))
+
+
 class TaxonListMenu(DiscordBaseMenu, CoreTaxonListMenu):
     def __init__(
         self,
@@ -875,22 +884,20 @@ class TaxonListMenu(DiscordBaseMenu, CoreTaxonListMenu):
         self.current_page = kwargs.get("page_start", 0)
         self.forward_button = ForwardButton(discord.ButtonStyle.grey, 0)
         self.back_button = BackButton(discord.ButtonStyle.grey, 0)
-        self.first_item = FirstItemButton(discord.ButtonStyle.grey, 0)
+        if is_life_list(self.source):
+            stop_row = 1
+            self.first_item = FirstItemButton(discord.ButtonStyle.grey, 0)
+        else:
+            stop_row = 0
         self.last_item = LastItemButton(discord.ButtonStyle.grey, 0)
-        self.stop_button = StopButton(discord.ButtonStyle.grey, 0)
-        # Late bind these as which buttons are shown depends on page content:
-        self.leaf_button = None
-        self.per_rank_button = None
-        self.direct_button = None
-        self.common_button = None
+        self.show_button = ShowTaxonButton(discord.ButtonStyle.grey, 0)
+        self.leaf_button = LeafButton(discord.ButtonStyle.grey, 1)
+        self.per_rank_button = PerRankButton(discord.ButtonStyle.grey, 1)
+        self.direct_button = DirectButton(discord.ButtonStyle.grey, 1)
+        self.common_button = CommonButton(discord.ButtonStyle.grey, 1)
+        self.stop_button = StopButton(discord.ButtonStyle.grey, stop_row)
         self.select_taxon = None
-        self.root_button = None
         self.root_taxon_id_stack = []
-        self.add_item(self.first_item)
-        self.add_item(self.back_button)
-        self.add_item(self.forward_button)
-        self.add_item(self.last_item)
-        self.add_item(self.stop_button)
 
     async def start(self, ctx: commands.Context):
         ctx.selected = 0
@@ -923,19 +930,21 @@ class TaxonListMenu(DiscordBaseMenu, CoreTaxonListMenu):
         self.ctx = ctx
         page = await self.source.get_page(self.current_page)
         kwargs = await self._get_kwargs_from_page(page)
-        if getattr(page[0], "descendant_obs_count", None):
+        is_life = is_life_list(self.source)
+        if is_life:
+            self.add_item(self.first_item)
+        self.add_item(self.back_button)
+        self.add_item(self.forward_button)
+        self.add_item(self.last_item)
+        self.add_item(self.show_button)
+        if is_life:
             # Source modifier buttons for life list:
-            self.leaf_button = LeafButton(discord.ButtonStyle.grey, 1)
-            self.per_rank_button = PerRankButton(discord.ButtonStyle.grey, 1)
-            self.root_button = RootButton(discord.ButtonStyle.grey, 1)
-            self.direct_button = DirectButton(discord.ButtonStyle.grey, 1)
             self.add_item(self.leaf_button)
             self.add_item(self.per_rank_button)
-            self.add_item(self.root_button)
             self.add_item(self.direct_button)
             if self.source.query_response.user:
-                self.common_button = CommonButton(discord.ButtonStyle.grey, 1)
                 self.add_item(self.common_button)
+        self.add_item(self.stop_button)
         self.select_taxon = SelectTaxonListTaxon(view=self, page=page, selected=0)
         self.add_item(self.select_taxon)
         self.message = await ctx.send(**kwargs, view=self)
