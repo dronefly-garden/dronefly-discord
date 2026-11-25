@@ -6,6 +6,9 @@ resolution-markers = [
     "python_full_version < '3.11.5'",
 ]
 
+[options]
+prerelease-mode = "allow"
+
 [[package]]
 name = "aiohappyeyeballs"
 version = "2.7.1"
@@ -332,7 +335,7 @@ wheels = [
 
 [[package]]
 name = "dronefly-core"
-version = "0.5.4.dev1"
+version = "0.5.4.dev2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "dateparser" },
@@ -342,14 +345,14 @@ dependencies = [
     { name = "pyinaturalist" },
     { name = "rich" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/76/2a/ab7c28c6e22fe59fd808e669c39c66699d7fda2f329983bc864a0e44d98d/dronefly_core-0.5.4.dev1.tar.gz", hash = "sha256:ac5517346e6b54746a752087ec87627b1bcea3334ada76b5a4b6361668723b87", size = 55643, upload-time = "2026-11-22T15:56:50.314Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ff/83/44499d8d069230142a9219326d23cdf25a506b13fbba8c70de47e3b1e950/dronefly_core-0.5.4.dev2.tar.gz", hash = "sha256:059136f79ff912b10fdf16b82be41af11f4b83f6f2b1d005d226e5a4169a07bc", size = 55921, upload-time = "2026-11-25T13:46:05.593Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e5/6d/aaefbb1421ef66dfa7796efe57ff0d4becaf29f0e36f910340402d62b7e9/dronefly_core-0.5.4.dev1-py3-none-any.whl", hash = "sha256:33e875d45aab18b4cf63fd7de4c489eb1dd9cc3e56c6c67a56c373626d04d5a9", size = 70473, upload-time = "2026-11-22T15:56:49.046Z" },
+    { url = "https://files.pythonhosted.org/packages/28/03/4d27fc3a4a3db1878008d08a68ccab4e9a7c646384bc0e461982f9d9c6ba/dronefly_core-0.5.4.dev2-py3-none-any.whl", hash = "sha256:463d4901467f9bfb58dc3b0b700a6bbe123bb4ef7ecaa9b381ff474bce065bd7", size = 70828, upload-time = "2026-11-25T13:46:04.315Z" },
 ]
 
 [[package]]
 name = "dronefly-discord"
-version = "0.2.4.dev1"
+version = "0.2.4.dev2"
 source = { editable = "." }
 dependencies = [
     { name = "discord-py" },
@@ -371,7 +374,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "discord-py", specifier = ">=2.3.1" },
-    { name = "dronefly-core", specifier = "==0.5.4.dev1" },
+    { name = "dronefly-core", specifier = "==0.5.4.dev2" },
     { name = "inflect", specifier = ">=5.3.0,<6" },
     { name = "pyinaturalist", specifier = ">=1.0.0.dev2" },
 ]
