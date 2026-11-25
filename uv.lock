@@ -371,7 +371,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "discord-py", specifier = ">=2.3.1" },
-    { name = "dronefly-core", specifier = ">=0.5.4.dev1" },
+    { name = "dronefly-core", specifier = "==0.5.4.dev1" },
     { name = "inflect", specifier = ">=5.3.0,<6" },
     { name = "pyinaturalist", specifier = ">=1.0.0.dev2" },
 ]
